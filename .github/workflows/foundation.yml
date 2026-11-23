@@ -50,6 +50,13 @@ jobs:
       - run: npm run tauri -- android init --ci
       - run: python3 android/prepare.py
       - run: npm run tauri -- android build --debug --apk --target aarch64
+      - name: Verify ARM64 package and Android signature
+        run: |
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' -print -quit)
+          test -s "$apk"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$apk"
+          unzip -Z1 "$apk" > "$RUNNER_TEMP/ploom-entries"
+          grep -Eq '^lib/arm64-v8a/.+\.so$' "$RUNNER_TEMP/ploom-entries"
       - uses: actions/upload-artifact@v4
         with:
           name: ploom-android-arm64-debug
