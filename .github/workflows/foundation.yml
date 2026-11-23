@@ -23,6 +23,9 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
+      - name: Check Windows PowerShell wizard and loopback site
+        shell: powershell
+        run: ../../scripts/windows/Test-Wizard.ps1
       - uses: actions/setup-node@v4
         with: {node-version: 22}
       - run: npm ci

@@ -64,7 +64,7 @@ jobs:
           mkdir deliver
           tools="$ANDROID_HOME/build-tools/36.0.0"
           "$tools/zipalign" -P 16 -f 4 "$apk" "$RUNNER_TEMP/aligned.apk"
-          "$tools/apksigner" sign --ks "$key" --ks-key-alias ploom --ks-pass env:PASS --out deliver/Ploom-arm64.apk "$RUNNER_TEMP/aligned.apk"
+          "$tools/apksigner" sign --ks "$key" --ks-pass env:PASS --out deliver/Ploom-arm64.apk "$RUNNER_TEMP/aligned.apk"
           "$tools/apksigner" verify --verbose deliver/Ploom-arm64.apk
           "$tools/zipalign" -c -P 16 4 deliver/Ploom-arm64.apk
           python3 ../../scripts/check-arm64.py deliver/Ploom-arm64.apk
