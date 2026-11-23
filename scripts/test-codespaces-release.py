@@ -1,5 +1,4 @@
 """Exercise enrollment offline with ephemeral fixture keys and an in-memory GitHub API."""
-import base64
 import contextlib
 import importlib.util
 import json
@@ -25,7 +24,6 @@ class Enrollment(unittest.TestCase):
             for name, value in {"ROOT": root, "WORK": root / "work", "FILES": root / "transfer"}.items():
                 mocks.enter_context(patch.object(wizard, name, value))
             stored, bindings = {}, {}
-            certpass = "fixture-android-password"
             signpass = "fixture-signer-password"
             tool = str(oldcwd / "apps/client/node_modules/.bin/tauri")
             original = wizard.run
@@ -50,26 +48,37 @@ class Enrollment(unittest.TestCase):
                     return b""
                 if args[1] == "secret": return "\n".join(stored).encode()
                 return json.dumps([dict(name=k,value=v) for k,v in bindings.items()]).encode()
-            def fixture(tool):
-                store = wizard.WORK / "fixture.p12"
-                original(["keytool","-genkeypair","-alias","ploom","-dname","CN=Temporary fixture",
-                          "-keyalg","RSA","-storetype","PKCS12","-keystore",str(store),"-storepass",certpass])
-                key = wizard.WORK / "fixture.key"
-                original([tool,"signer","generate","--ci","-p",signpass,"-w",str(key)])
-                return dict(zip(wizard.SECRET_NAMES,[certpass,base64.b64encode(store.read_bytes()).decode(),signpass,key.read_text().strip()]),UPDATER_PUBLIC_KEY=key.with_suffix(".key.pub").read_text().strip())
+            # Automate only the terminal password prompt of the real signer.
+            wrapper = root / "fixture-signer"
+            wrapper.write_text("""#!/bin/sh
+if [ "$2" = generate ]; then
+    exec "$FIXTURE_TOOL" "$@" --ci -p "$FIXTURE_PASSWORD"
+fi
+exec "$FIXTURE_TOOL" "$@"
+""")
+            wrapper.chmod(0o700)
+            interrupted = True
             def answer(prompt):
+                nonlocal interrupted
                 if "Enter" in prompt:
+                    if interrupted:
+                        interrupted = False
+                        raise KeyboardInterrupt
                     shutil.copyfile(wizard.FILES / "ploom-release.gpg", wizard.FILES / "restore.gpg")
                 return wizard.REPO
-            mocks.enter_context(patch.dict(os.environ, {"CODESPACES":"true"}))
-            mocks.enter_context(patch.dict(os.environ))
+            mocks.enter_context(patch.dict(os.environ, {"CODESPACES":"true","FIXTURE_TOOL":tool,"FIXTURE_PASSWORD":signpass}))
             os.environ.pop("GITHUB_ACTIONS", None)
             mocks.enter_context(patch.object(sys.stdin,"isatty",return_value=True))
             mocks.enter_context(patch.object(wizard,"run",side_effect=run))
-            mocks.enter_context(patch.object(wizard,"signer",return_value=tool))
-            generator = mocks.enter_context(patch.object(wizard,"generate",side_effect=fixture))
+            mocks.enter_context(patch.object(wizard,"signer",return_value=str(wrapper)))
+            generator = mocks.enter_context(patch.object(wizard,"generate",wraps=wizard.generate))
             mocks.enter_context(patch("builtins.input",side_effect=answer))
-            mocks.enter_context(patch.object(wizard.getpass,"getpass",return_value="fixture backup passphrase"))
+            mocks.enter_context(patch.object(wizard.getpass,"getpass",side_effect=lambda prompt: signpass if "Tauri" in prompt else "fixture backup passphrase"))
+            with self.assertRaises(KeyboardInterrupt):
+                wizard.main()
+            self.assertTrue((wizard.WORK / "updater.key").is_file())
+            self.assertFalse(stored)
+            shutil.copyfile(wizard.FILES / "ploom-release.gpg", wizard.FILES / "restore.gpg")
             wizard.main()
             self.assertFalse(wizard.WORK.exists())
             self.assertEqual(set(stored),set(wizard.SECRET_NAMES))
@@ -77,6 +86,11 @@ class Enrollment(unittest.TestCase):
             wizard.main()
             self.assertFalse(wizard.WORK.exists())
             self.assertEqual(generator.call_count,1)
+            saved = dict(stored)
+            bindings["ANDROID_CERT_SHA256"] = "incorrect"
+            with self.assertRaisesRegex(SystemExit,"идентификаторы"):
+                wizard.main()
+            self.assertEqual(stored,saved)
 
 
 if __name__ == "__main__":

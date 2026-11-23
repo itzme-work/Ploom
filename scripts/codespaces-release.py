@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 import urllib.request
 
 REPO = "itzme-work/Ploom"
@@ -83,6 +84,9 @@ def generate(tool):
 def identities(bundle, tool):
     store = WORK / "verify.p12"
     store.write_bytes(base64.b64decode(bundle[SECRET_NAMES[1]], validate=True))
+    # A certificate entry alone cannot sign an APK. Requesting a CSR exercises the private key.
+    run(["keytool","-certreq","-alias","ploom","-keystore",str(store),
+         "-storepass:env","PLOOM_PASS"], extra={"PLOOM_PASS":bundle[SECRET_NAMES[0]]})
     cert = run(["keytool", "-exportcert", "-keystore", str(store), "-alias", "ploom",
                 "-storepass:env", "PLOOM_PASS"], extra={"PLOOM_PASS": bundle[SECRET_NAMES[0]]})
     probe = WORK / "probe"
@@ -154,6 +158,7 @@ def main():
     home = WORK / "gpg"
     home.mkdir(mode=0o700, exist_ok=True)
     verified = False
+    bundle = None
     generated = pending
     try:
         tool = signer()
@@ -166,11 +171,15 @@ def main():
             # Preserve the recovery material during interrupted enrollment.
             (WORK / "recovery.json").write_text(json.dumps(bundle))
             ids = identities(bundle, tool)
-            with backup.open("xb") as out:
-                out.write(encrypted(json.dumps(bundle).encode(), password, home))
+            ciphertext = encrypted(json.dumps(bundle).encode(), password, home)
+            with tempfile.NamedTemporaryFile(dir=FILES) as out:
+                out.write(ciphertext)
+                out.flush()
+                os.fsync(out.fileno())
+                os.link(out.name, backup)  # Publish only a complete archive; never replace one.
             print("Explorer → .ploom-release/ploom-release.gpg → Download. Сохраните офлайн. Через Upload загрузите скачанный файл сюда как restore.gpg.")
             input("Нажмите Enter после обратной загрузки: ")
-        if pending and returned.exists() and "bundle" not in locals():
+        if pending and returned.exists() and bundle is None:
             bundle = json.loads((WORK / "recovery.json").read_text())
             ids = identities(bundle, tool)
         if returned.is_symlink() or (backup.exists() and returned.samefile(backup)):
