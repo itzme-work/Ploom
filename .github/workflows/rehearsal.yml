@@ -7,8 +7,7 @@ defaults:
     working-directory: apps/client
 jobs:
   test-packages:
-    if: github.ref == 'refs/heads/native-completion' && github.actor == github.repository_owner
-    environment: ploom-rehearsal
+    if: github.event.repository.private && github.ref == 'refs/heads/native-completion' && github.actor == github.repository_owner
     strategy:
       fail-fast: false
       matrix:
@@ -16,11 +15,11 @@ jobs:
         version: ['0.1.0', '0.1.1-test']
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: {persist-credentials: false}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: {node-version: 22}
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         if: runner.os == 'Linux'
         with: {distribution: temurin, java-version: 17}
       - name: Configure isolated test build
@@ -67,11 +66,37 @@ jobs:
           "$tools/zipalign" -P 16 -f 4 "$apk" "$RUNNER_TEMP/aligned.apk"
           "$tools/apksigner" sign --ks "$key" --ks-key-alias ploom --ks-pass env:PASS --out deliver/Ploom-arm64.apk "$RUNNER_TEMP/aligned.apk"
           "$tools/apksigner" verify --verbose deliver/Ploom-arm64.apk
-      - uses: actions/upload-artifact@v4
+          "$tools/zipalign" -c -P 16 4 deliver/Ploom-arm64.apk
+          python3 ../../scripts/check-arm64.py deliver/Ploom-arm64.apk
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: rehearsal-${{ matrix.version }}-${{ runner.os }}
+          retention-days: 3
           path: |
             apps/client/deliver/*.apk
             apps/client/deliver/*.exe
             apps/client/deliver/*.sig
+          if-no-files-found: error
+  stage:
+    needs: test-packages
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: {persist-credentials: false}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: rehearsal-0.1.1-test-*
+          path: packages
+          merge-multiple: true
+      - run: python3 scripts/stage-rehearsal.py packages site
+        env:
+          STAGING_HOST: ${{ vars.STAGING_HOST }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: private-rehearsal-site
+          path: site
+          retention-days: 3
           if-no-files-found: error

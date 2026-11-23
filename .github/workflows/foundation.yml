@@ -57,6 +57,8 @@ jobs:
           apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' -print -quit)
           test -s "$apk"
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$apk"
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 4 "$apk"
+          python3 ../../scripts/check-arm64.py "$apk"
           unzip -Z1 "$apk" > "$RUNNER_TEMP/ploom-entries"
           grep -Eq '^lib/arm64-v8a/.+\.so$' "$RUNNER_TEMP/ploom-entries"
       - uses: actions/upload-artifact@v4

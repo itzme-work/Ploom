@@ -11,6 +11,7 @@ case "${1:-}" in
 esac
 dir=${XDG_DATA_HOME:-$HOME/.local/share}/$profile
 mkdir -p "$(dirname "$dir")"
+if git -C "$(dirname "$dir")" rev-parse --is-inside-work-tree >/dev/null 2>&1; then echo "Choose key storage outside any Git checkout."; exit 1; fi
 case "$(realpath -m "$dir")/" in "$repo/"*) echo "Choose storage outside the checkout."; exit 1;; esac
 mkdir -m 700 "$dir" || { echo "Directory exists or is unavailable. Preserve any existing keys."; exit 1; }
 cd "$repo/apps/client"
