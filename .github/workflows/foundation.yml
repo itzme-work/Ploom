@@ -47,6 +47,7 @@ jobs:
           echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
       - run: rustup target add aarch64-linux-android
       - run: npm run tauri -- android init --ci
+      - run: python3 android/prepare.py
       - run: npm run tauri -- android build --debug --apk --target aarch64
       - uses: actions/upload-artifact@v4
         with:

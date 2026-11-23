@@ -1,7 +1,7 @@
 use tauri_plugin_updater::UpdaterExt;
 
 #[tauri::command]
-pub async fn install_update(app: tauri::AppHandle, channel: String, expected: String) -> Result<(), String> {
+pub async fn install_update(app: tauri::AppHandle, channel: String, expected: String, progress: tauri::ipc::Channel<(String,u64,Option<u64>)>) -> Result<(), String> {
     let feed = match channel.as_str() {
         "Stable" => "stable",
         "Beta" => "beta",
@@ -18,6 +18,26 @@ pub async fn install_update(app: tauri::AppHandle, channel: String, expected: St
         || !update.download_url.path().starts_with("/itzme-work/Ploom/releases/download/") {
         return Err("Unexpected update metadata".into());
     }
-    update.download_and_install(|_, _| {}, || {}).await.map_err(|e| e.to_string())?;
+    const LIMIT: usize = 256 * 1024 * 1024;
+    let mut response = reqwest::Client::builder().timeout(std::time::Duration::from_secs(300))
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() < 5 && attempt.url().scheme() == "https" &&
+                matches!(attempt.url().host_str(),Some("github.com" | "release-assets.githubusercontent.com")) {
+                attempt.follow()
+            } else { attempt.error("Untrusted redirect") }
+        })).build().map_err(|e| e.to_string())?.get(update.download_url.clone()).send().await
+        .and_then(|r| r.error_for_status()).map_err(|_| "Update download failed")?;
+    let total = response.content_length();
+    if total.unwrap_or(0) > LIMIT as u64 {return Err("Update exceeds size limit".into());}
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|_| "Download interrupted")? {
+        if chunk.len() > LIMIT - bytes.len() {return Err("Update exceeds size limit".into());}
+        bytes.extend_from_slice(&chunk);
+        let _ = progress.send(("download".into(),bytes.len() as u64,total));
+    }
+    let _ = progress.send(("verify".into(),bytes.len() as u64,total));
+    update.verify(&bytes).map_err(|_| "Update signature rejected")?;
+    let _ = progress.send(("install".into(),bytes.len() as u64,total));
+    update.install(bytes).map_err(|e| e.to_string())?;
     app.restart()
 }
