@@ -10,7 +10,8 @@
     "test": "vitest run",
     "build": "tsc --noEmit && vite build",
     "dev": "vite",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "lint": "biome lint --only=correctness/noUnreachable --only=correctness/noInvalidUseBeforeDeclaration src tests e2e"
   },
   "keywords": [],
   "author": "",
@@ -26,6 +27,7 @@
     "zustand": "^5.1.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.6.8",
     "@playwright/test": "^1.65.1",
     "@tauri-apps/cli": "^2.12.6",
     "@types/react": "^19.3.0",
