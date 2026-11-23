@@ -93,3 +93,16 @@ jobs:
           arch: x86_64
           working-directory: apps/client
           script: bash ../../scripts/android-smoke.sh
+  release-wizard:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 22}
+      - run: sudo apt-get update -qq && sudo apt-get install -y minisign python3-yaml
+      - run: npm ci --prefix apps/client
+      - run: python3 scripts/test-codespaces-release.py
+      - run: /usr/bin/python3 scripts/test-release-modes.py

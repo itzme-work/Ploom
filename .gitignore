@@ -9,3 +9,5 @@ target/
 *.p12
 test-results/
 playwright-report/
+/.ploom-release/
+__pycache__/
