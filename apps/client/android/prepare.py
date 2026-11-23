@@ -23,3 +23,8 @@ tree.write(manifest, encoding="utf-8", xml_declaration=True)
 paths = main / "res/xml/update_paths.xml"
 paths.parent.mkdir(exist_ok=True)
 paths.write_text('<paths><cache-path name="updates" path="updates/"/></paths>')
+gradle = main.parents[1] / "build.gradle.kts"
+dependency = 'implementation("com.android.tools.build:apksig:8.7.3")'
+contents = gradle.read_text()
+if dependency not in contents:
+    gradle.write_text(contents + "\ndependencies { " + dependency + " }\n")

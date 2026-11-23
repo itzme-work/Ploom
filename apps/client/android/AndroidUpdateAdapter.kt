@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.HttpsURLConnection
 
 @InvokeArg
-class InstallArgs { lateinit var expected: String }
+class InstallArgs { lateinit var expected: String; lateinit var progress: app.tauri.plugin.Channel }
 
 @TauriPlugin
 class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
@@ -30,7 +30,8 @@ class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
         if (!busy.compareAndSet(false, true)) { invoke.reject("Installation in progress"); return }
         Thread {
             try {
-                val version = invoke.parseArgs(InstallArgs::class.java).expected
+                val args = invoke.parseArgs(InstallArgs::class.java)
+                val version = args.expected
                 require(Regex("[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?").matches(version))
                 val pm = host.packageManager
                 if (pm.getInstallerPackageName(host.packageName) == "com.android.vending") {
@@ -48,7 +49,10 @@ class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
                 var handedOff = false
                 try {
                     dir.listFiles()?.filter { it != apk && it.lastModified() < System.currentTimeMillis()-86400000 }?.forEach { it.delete() }
-                    fetch(version, apk)
+                    fetch(version, apk, args.progress)
+                    args.progress.sendObject(listOf("verify", apk.length(), apk.length()))
+                    val verification = com.android.apksig.ApkVerifier.Builder(apk).setMinCheckedPlatformVersion(Build.VERSION.SDK_INT).setMaxCheckedPlatformVersion(Build.VERSION.SDK_INT).build().verify()
+                    require(verification.isVerified && (verification.isVerifiedUsingV2Scheme || verification.isVerifiedUsingV3Scheme)) { "APK signature verification failed" }
                     val flags = PackageManager.GET_SIGNING_CERTIFICATES
                     val archive = requireNotNull(pm.getPackageArchiveInfo(apk.path, flags)) { "Invalid APK" }
                     val installed = pm.getPackageInfo(host.packageName, flags)
@@ -58,6 +62,7 @@ class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
                     }.toSet()
                     val trusted = signers(installed)
                     require(trusted.isNotEmpty() && trusted == signers(archive)) { "APK signer rejected" }
+                    args.progress.sendObject(listOf("install", apk.length(), apk.length()))
                     val uri = FileProvider.getUriForFile(host, host.packageName+".updates", apk)
                     host.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri,"application/vnd.android.package-archive").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
                     handedOff = true
@@ -68,7 +73,7 @@ class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
         }.start()
     }
 
-    private fun fetch(version: String, target: File) {
+    private fun fetch(version: String, target: File, progress: app.tauri.plugin.Channel) {
         var url = URL("https://github.com/itzme-work/Ploom/releases/download/v$version/Ploom-arm64.apk")
         repeat(5) {
             require(url.protocol == "https" && url.host in setOf("github.com","release-assets.githubusercontent.com") && url.port in setOf(-1,443))
@@ -92,6 +97,7 @@ class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
                             size += n
                             require(size <= limit) { "APK exceeds size limit" }
                             output.write(buffer,0,n)
+                            if (size % 1048576 < n) progress.sendObject(listOf("download", size, connection.contentLengthLong.takeIf { it > 0 }))
                         }
                     } }
                     return
