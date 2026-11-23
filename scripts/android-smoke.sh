@@ -5,8 +5,11 @@ adb install -r "$apk"
 adb shell am start -W -n work.itzme.ploom/.MainActivity
 # UIAutomator reads accessibility nodes from the real Activity and WebView.
 for attempt in $(seq 1 30); do
-  adb shell uiautomator dump /sdcard/ploom-ui.xml >/dev/null
-  adb pull /sdcard/ploom-ui.xml "$RUNNER_TEMP/ploom-ui.xml" >/dev/null
+  remote="/sdcard/ploom-ui-$attempt.xml"
+  if ! adb shell uiautomator dump "$remote" >/dev/null || ! adb pull "$remote" "$RUNNER_TEMP/ploom-ui.xml" >/dev/null; then
+    sleep 1
+    continue
+  fi
   if python3 - "$RUNNER_TEMP/ploom-ui.xml" <<'PY'
 import sys, xml.etree.ElementTree as ET
 nodes = ET.parse(sys.argv[1]).iter("node")
