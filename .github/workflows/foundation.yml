@@ -29,6 +29,8 @@ jobs:
       - run: npm run build
       - run: cargo test --manifest-path src-tauri/Cargo.toml
       - run: npm run tauri -- build --debug
+      - name: Launch packaged Ploom in WebView2
+        run: node e2e/windows-smoke.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: ploom-windows-x64-debug

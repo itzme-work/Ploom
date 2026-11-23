@@ -279,7 +279,7 @@ function App() {
 									</button>
 								)}
 							<details>
-								<summary>{t("Что нового", "What’s new")}</summary>0.1.0 ·
+								<summary>{t("Что нового", "What’s new")}</summary>{current} ·
 								Foundation · Apache-2.0
 							</details>
 						</section>

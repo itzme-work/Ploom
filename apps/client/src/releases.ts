@@ -1,5 +1,6 @@
 import semver from 'semver'
-export const current='0.1.0'
+import appConfig from '../src-tauri/tauri.conf.json'
+export const current=appConfig.version
 export async function checkRelease(beta:boolean){
  const versions:{version:string;notes:string}[]=[]
  for(let page=1;page<=10;page++){
