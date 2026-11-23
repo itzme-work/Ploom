@@ -66,7 +66,7 @@ exec "$FIXTURE_TOOL" "$@"
                         raise KeyboardInterrupt
                     shutil.copyfile(wizard.FILES / "ploom-release.gpg", wizard.FILES / "restore.gpg")
                 return wizard.REPO
-            mocks.enter_context(patch.dict(os.environ, {"CODESPACES":"true","FIXTURE_TOOL":tool,"FIXTURE_PASSWORD":signpass}))
+            mocks.enter_context(patch.dict(os.environ, {"CODESPACES":"true","GITHUB_REPOSITORY":wizard.REPO,"FIXTURE_TOOL":tool,"FIXTURE_PASSWORD":signpass}))
             os.environ.pop("GITHUB_ACTIONS", None)
             mocks.enter_context(patch.object(sys.stdin,"isatty",return_value=True))
             mocks.enter_context(patch.object(wizard,"run",side_effect=run))

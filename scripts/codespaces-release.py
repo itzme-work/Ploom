@@ -105,7 +105,7 @@ def identities(bundle, tool):
 
 def main():
     os.umask(0o077)
-    if os.getenv("CODESPACES") != "true" or os.getenv("GITHUB_ACTIONS") or not sys.stdin.isatty():
+    if os.getenv("CODESPACES") != "true" or os.getenv("GITHUB_REPOSITORY", "").lower() != REPO.lower() or os.getenv("GITHUB_ACTIONS") or not sys.stdin.isatty():
         sys.exit("Запустите мастер в личном интерактивном Codespace.")
     os.chdir(ROOT)
     os.environ["GH_HOST"] = "github.com"

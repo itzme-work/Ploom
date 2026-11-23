@@ -107,6 +107,8 @@ jobs:
       run:
         working-directory: .
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: {persist-credentials: false}
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           pattern: official-*
@@ -121,19 +123,8 @@ jobs:
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y minisign
-          printf %s "$PUBLIC_KEY" | base64 -d > "$RUNNER_TEMP/pub"
-          base64 -d deliver/Ploom.exe.sig > "$RUNNER_TEMP/signature"
-          minisign -Vm deliver/Ploom.exe -p "$RUNNER_TEMP/pub" -x "$RUNNER_TEMP/signature"
-          sed -n '3p' "$RUNNER_TEMP/signature" | tr '\t' '\n' | grep -Fx "version:$VERSION"
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;36.0.0"
-          tools="$ANDROID_HOME/build-tools/36.0.0"
-          "$tools/apksigner" verify --print-certs deliver/Ploom-arm64.apk > "$RUNNER_TEMP/cert"
-          grep -Fxi "Signer #1 certificate SHA-256 digest: $CERT_DIGEST" "$RUNNER_TEMP/cert"
-          "$tools/aapt" dump badging deliver/Ploom-arm64.apk > "$RUNNER_TEMP/badging"
-          grep "^package: name='work.itzme.ploom' " "$RUNNER_TEMP/badging" | grep -F "versionName='$VERSION'"
-          for f in deliver/Ploom.exe deliver/Ploom-arm64.apk; do test "$(stat -c %s "$f")" -le 268435456; done
-          jq -n --arg v "$VERSION" --arg sig "$(cat deliver/Ploom.exe.sig)" \
-            '{version:$v,platforms:{"windows-x86_64":{signature:$sig,url:("https://github.com/itzme-work/Ploom/releases/download/v"+$v+"/Ploom.exe")}}}' > deliver/latest.json
+          bash scripts/verify-release-assets.sh
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: verified-release
