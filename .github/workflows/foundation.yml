@@ -1,0 +1,49 @@
+name: Foundation
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+defaults:
+  run:
+    working-directory: apps/client
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 22}
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: npm audit --omit=dev
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 22}
+      - run: npm ci
+      - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - run: npm run tauri -- build --debug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ploom-windows-x64-debug
+          path: apps/client/src-tauri/target/debug/bundle/nsis/*.exe
+          if-no-files-found: error
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 22}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: 17}
+      - run: npm ci
+      - run: rustup target add aarch64-linux-android
+      - run: npm run tauri -- android init --ci
+      - run: npm run tauri -- android build --debug --apk --target aarch64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ploom-android-arm64-debug
+          path: apps/client/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error

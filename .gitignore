@@ -1,0 +1,11 @@
+node_modules/
+dist/
+target/
+.env*
+!.env.example
+*.jks
+*.keystore
+*.key
+*.p12
+test-results/
+playwright-report/
