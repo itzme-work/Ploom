@@ -19,5 +19,11 @@ try {
  await expect(page.getByText('Disconnected',{exact:true})).toBeVisible()
  await page.getByRole('button',{name:'Settings'}).click()
  await expect(page.getByRole('button',{name:'Check for updates'})).toBeVisible()
+ const invokeFailure = (command,args) => page.evaluate(async ([cmd,payload])=>{
+   try { await window.__TAURI_INTERNALS__.invoke(cmd,payload); return "unexpected success" }
+   catch(e) { return String(e) }
+ },[command,args])
+ expect(await invokeFailure('install_update',{channel:'Stable',expected:'0.1.1-test',progress:'__CHANNEL__:10'})).toContain('Release signing is not configured')
+ expect(await invokeFailure('plugin:updater|check',{})).toMatch(/not allowed|denied/i)
  await browser.close()
 }finally{child.kill()}

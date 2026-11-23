@@ -17,7 +17,18 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' https://api.github.com ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+      "csp": "default-src 'self'; connect-src 'self' https://api.github.com ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; img-src 'self' data:",
+      "capabilities": [
+        {
+          "identifier": "main-local",
+          "windows": [
+            "main"
+          ],
+          "permissions": [
+            "allow-install-update"
+          ]
+        }
+      ]
     }
   },
   "bundle": {
