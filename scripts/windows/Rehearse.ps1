@@ -37,8 +37,9 @@ function Set-PrivateDirectory([string]$Path) {
     $dir.SetAccessControl($acl)
 }
 function New-TestKeys {
-    Set-PrivateDirectory $keys
-    $tmp=Join-Path $keys ('tools-'+[guid]::NewGuid())
+    $pending=Join-Path $base ('pending-keys-'+[guid]::NewGuid())
+    Set-PrivateDirectory $pending
+    $tmp=Join-Path $pending ('tools-'+[guid]::NewGuid())
     $null=New-Item -ItemType Directory $tmp
     $cert=$null
     try {
@@ -49,15 +50,19 @@ function New-TestKeys {
         Expand-Archive $zip $tmp
         $exe=(Get-ChildItem $tmp -Filter cargo-tauri.exe -Recurse).FullName
         Write-Host 'Create a non-empty Tauri password. Save it in your password manager.'
-        & $exe signer generate -w (Join-Path $keys 'updater.key')
+        & $exe signer generate -w (Join-Path $pending 'updater.key')
         if ($LASTEXITCODE) {throw 'Signer failed'}
         $password=Read-Host 'New Android PFX password (save in your password manager)' -AsSecureString
         if ($password.Length -lt 12) {throw 'Use at least 12 characters'}
-        $cert=New-SelfSignedCertificate -Subject 'CN=Ploom Android Rehearsal' -FriendlyName 'ploom' -KeyAlgorithm RSA -KeyLength 3072 -HashAlgorithm SHA256 -KeyExportPolicy Exportable -KeyUsage DigitalSignature -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddYears(10)
-        $null=Export-PfxCertificate -Cert $cert -FilePath (Join-Path $keys 'android.p12') -Password $password -ChainOption EndEntityCertOnly
-    } finally {
-        if ($cert) { Remove-Item "Cert:\CurrentUser\My\$($cert.Thumbprint)" -DeleteKey }
+        $cert=New-SelfSignedCertificate -Type Custom -Subject 'CN=Ploom Android Rehearsal' -FriendlyName 'ploom' -KeyAlgorithm RSA -KeyLength 3072 -HashAlgorithm SHA256 -KeyExportPolicy Exportable -KeyUsage DigitalSignature -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddYears(10)
+        $null=Export-PfxCertificate -Cert $cert -FilePath (Join-Path $pending 'android.p12') -Password $password -ChainOption EndEntityCertOnly
+        Remove-Item "Cert:\CurrentUser\My\$($cert.Thumbprint)" -DeleteKey
+        $cert=$null
         Remove-Item -LiteralPath $tmp -Force -Recurse
+        [IO.Directory]::Move($pending,$keys)
+    } finally {
+        try { if ($cert) { Remove-Item "Cert:\CurrentUser\My\$($cert.Thumbprint)" -DeleteKey } }
+        finally { if (Test-Path $pending) {Remove-Item -LiteralPath $pending -Force -Recurse} }
     }
 }
 $owner=Run-Gh @('api','user','--jq','.login')
@@ -77,10 +82,14 @@ if ($Mode -eq 'Download') {
     if ($meta.path -ne '.github/workflows/rehearsal.yml' -or $meta.conclusion -ne 'success' -or $meta.head_branch -ne 'native-completion') {throw 'Expected a successful private signing run'}
     $output=Join-Path $base "run-$run"
     if (Test-Path $output) {throw "Already downloaded: $output"}
-    Set-PrivateDirectory $output
-    foreach ($name in 'private-rehearsal-site','rehearsal-0.1.0-Windows','rehearsal-0.1.0-Linux') {
-        Run-Gh @('run','download',$run,'--repo',$repo,'--name',$name,'--dir',(Join-Path $output $name))
-    }
+    $pending=Join-Path $base ('pending-run-'+[guid]::NewGuid())
+    Set-PrivateDirectory $pending
+    try {
+      foreach ($name in 'private-rehearsal-site','rehearsal-0.1.0-Windows','rehearsal-0.1.0-Linux') {
+        Run-Gh @('run','download',$run,'--repo',$repo,'--name',$name,'--dir',(Join-Path $pending $name))
+      }
+      [IO.Directory]::Move($pending,$output)
+    } finally {if (Test-Path $pending) {Remove-Item -LiteralPath $pending -Force -Recurse}}
     & "$PSScriptRoot\Serve.ps1" -Directory (Join-Path $output 'private-rehearsal-site')
     return
 }
@@ -99,6 +108,15 @@ if ((Get-Item $keys).Attributes -band [IO.FileAttributes]::ReparsePoint) {throw 
 foreach ($file in 'android.p12','updater.key','updater.key.pub') {
     if (!(Test-Path -PathType Leaf (Join-Path $keys $file))) {throw "Incomplete key set. Restore a backup of $keys."}
     if ((Get-Item (Join-Path $keys $file)).Attributes -band [IO.FileAttributes]::ReparsePoint) {throw "Refusing linked key file"}
+}
+$trusted=@([Security.Principal.WindowsIdentity]::GetCurrent().User.Value,'S-1-5-18','S-1-5-32-544')
+foreach ($path in $keys,"$keys\updater.key","$keys\android.p12") {
+    $acl=Get-Acl -LiteralPath $path
+    foreach ($rule in $acl.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier])) {
+        if ($rule.AccessControlType -eq 'Allow' -and $rule.IdentityReference.Value -notin $trusted) {
+            throw "Restrict key folder permissions to your account before continuing: $path"
+        }
+    }
 }
 Write-Host "Copy encrypted keys from $keys to encrypted removable storage. Keep both passwords separately."
 if ((Read-Host 'Type BACKUP after verifying the backup') -cne 'BACKUP') {return}
