@@ -15,14 +15,17 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test
       - run: npm audit --omit=dev
   windows:
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: {node-version: 22}
       - run: npm ci
+      - run: npm run build
       - run: cargo test --manifest-path src-tauri/Cargo.toml
       - run: npm run tauri -- build --debug
       - uses: actions/upload-artifact@v4
@@ -39,6 +42,10 @@ jobs:
       - uses: actions/setup-java@v4
         with: {distribution: temurin, java-version: 17}
       - run: npm ci
+      - uses: android-actions/setup-android@v3
+      - run: |
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
       - run: rustup target add aarch64-linux-android
       - run: npm run tauri -- android init --ci
       - run: npm run tauri -- android build --debug --apk --target aarch64
