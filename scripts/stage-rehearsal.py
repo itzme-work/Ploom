@@ -23,8 +23,8 @@ for name in files:
 (site / "releases.json").write_text(json.dumps([{
     "tag_name": f"v{version}", "draft": False, "prerelease": True, "body": "Update rehearsal"
 }]))
-feed = site / prefix / "beta-feed"
-feed.mkdir()
+feed = site / target
+feed.mkdir(exist_ok=True)
 (feed / "latest.json").write_text(json.dumps({
     "version": version, "platforms": {"windows-x86_64": {
         "signature": signature, "url": f"https://{host}/{target.as_posix()}/Ploom.exe"

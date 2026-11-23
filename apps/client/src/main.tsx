@@ -269,7 +269,38 @@ function App() {
 													),
 												);
 											} catch (error) {
-												show(String(error));
+												const detail = String(error);
+												if (/Allow installation from Ploom/i.test(detail)) {
+													show(
+														t(
+															"Разрешите установку из Ploom в настройках Android и нажмите «Обновить Ploom» ещё раз.",
+															"Allow installs from Ploom in Android settings, then tap Update Ploom again.",
+														),
+													);
+												} else if (
+													/signer rejected|signature|unsigned/i.test(detail)
+												) {
+													show(
+														t(
+															"Установка остановлена: подпись обновления не прошла проверку.",
+															"Installation stopped because the update signature could not be verified.",
+														),
+													);
+												} else if (/signing is not configured/i.test(detail)) {
+													show(
+														t(
+															"Эта сборка не настроена для подписанных обновлений.",
+															"This build is not configured for signed updates.",
+														),
+													);
+												} else {
+													show(
+														t(
+															"Не удалось установить обновление. ",
+															"Update failed. ",
+														) + detail,
+													);
+												}
 											} finally {
 												loading(false);
 											}
@@ -279,8 +310,8 @@ function App() {
 									</button>
 								)}
 							<details>
-								<summary>{t("Что нового", "What’s new")}</summary>{current} ·
-								Foundation · Apache-2.0
+								<summary>{t("Что нового", "What’s new")}</summary>
+								{current} · Foundation · Apache-2.0
 							</details>
 						</section>
 					</>

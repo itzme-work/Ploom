@@ -7,14 +7,16 @@ pub async fn install_update(
     expected: String,
     progress: tauri::ipc::Channel<(String, u64, Option<u64>)>,
 ) -> Result<(), String> {
-    let feed = match channel.as_str() {
-        "Stable" => "stable",
-        "Beta" => "beta",
-        _ => return Err("Invalid channel".into()),
-    };
     let key = option_env!("PLOOM_UPDATER_PUBLIC_KEY").ok_or("Release signing is not configured")?;
-    let endpoint =
-        format!("https://github.com/itzme-work/Ploom/releases/download/{feed}-feed/latest.json");
+    let version = semver::Version::parse(&expected).map_err(|_| "Invalid release version")?;
+    if !matches!(channel.as_str(), "Stable" | "Beta")
+        || (channel == "Stable" && !version.pre.is_empty())
+        || !version.build.is_empty()
+    {
+        return Err("Invalid release channel or version".into());
+    }
+    let release_path = format!("/itzme-work/Ploom/releases/download/v{version}");
+    let endpoint = format!("https://github.com{release_path}/latest.json");
     let updater = app
         .updater_builder()
         .pubkey(key)
@@ -31,10 +33,7 @@ pub async fn install_update(
     if update.version != expected
         || update.download_url.scheme() != "https"
         || update.download_url.host_str() != Some("github.com")
-        || !update
-            .download_url
-            .path()
-            .starts_with("/itzme-work/Ploom/releases/download/")
+        || update.download_url.path() != format!("{release_path}/Ploom.exe")
     {
         return Err("Unexpected update metadata".into());
     }

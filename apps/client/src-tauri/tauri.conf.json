@@ -40,7 +40,10 @@
   "plugins": {
     "updater": {
       "pubkey": "",
-      "requireSignedVersion": true
+      "requireSignedVersion": true,
+      "windows": {
+        "installMode": "basicUi"
+      }
     }
   }
 }

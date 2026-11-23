@@ -4,7 +4,7 @@ $ErrorActionPreference='Stop'
 $root=(Resolve-Path -LiteralPath $Directory).ProviderPath
 $prefix='itzme-work/Ploom/releases/download'
 $files=@{}
-foreach ($name in 'releases.json',"$prefix/beta-feed/latest.json","$prefix/v0.1.1-test/Ploom.exe","$prefix/v0.1.1-test/Ploom-arm64.apk") {
+foreach ($name in 'releases.json',"$prefix/v0.1.1-test/latest.json","$prefix/v0.1.1-test/Ploom.exe","$prefix/v0.1.1-test/Ploom-arm64.apk") {
     $item=Get-Item -LiteralPath (Join-Path $root $name)
     if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {throw "Invalid file: $name"}
     $files["/$name"]=$item.FullName

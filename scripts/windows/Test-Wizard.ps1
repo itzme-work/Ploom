@@ -1,6 +1,6 @@
 # CI smoke test uses public dummy payloads and a local stand-in for Tailscale.
 $ErrorActionPreference='Stop'
-foreach ($name in 'Rehearse','Serve') {
+foreach ($name in 'Rehearse','Serve','SetupRelease','Signing') {
     $errors=$null
     $null=[Management.Automation.Language.Parser]::ParseFile("$PSScriptRoot\$name.ps1",[ref]$null,[ref]$errors)
     if ($errors.Count) {throw ($errors | Out-String)}
@@ -13,7 +13,7 @@ try {
     $env:Path="$tmp;$env:Path"
     Set-Content "$tmp\tailscale.cmd" '@echo {}' -Encoding Ascii
     $payload='itzme-work/Ploom/releases/download'
-    foreach ($file in 'releases.json',"$payload/beta-feed/latest.json","$payload/v0.1.1-test/Ploom.exe","$payload/v0.1.1-test/Ploom-arm64.apk") {
+    foreach ($file in 'releases.json',"$payload/v0.1.1-test/latest.json","$payload/v0.1.1-test/Ploom.exe","$payload/v0.1.1-test/Ploom-arm64.apk") {
         $path=Join-Path $tmp $file
         $null=[IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($path))
         [IO.File]::WriteAllText($path,'fixture')
