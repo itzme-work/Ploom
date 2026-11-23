@@ -28,6 +28,15 @@ if [[ ! -d "$keys" ]]; then
   (cd apps/client && npm ci)
   bash scripts/setup-signing.sh --test
 fi
+python3 - "$keys" <<'PYSECURE'
+import os, stat, sys
+from pathlib import Path
+folder = Path(sys.argv[1])
+for p in (folder, folder / "android.p12", folder / "updater.key"):
+    info = p.lstat()
+    if p.is_symlink() or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) & 0o077:
+        sys.exit("Проверьте владельца и права каталога (700) и приватных файлов (600).")
+PYSECURE
 for file in android.p12 updater.key updater.key.pub; do
   [[ -s "$keys/$file" && ! -L "$keys/$file" ]] || { echo "Неполный комплект ключей. Восстановите резервную копию."; exit 1; }
 done
