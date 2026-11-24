@@ -18,5 +18,5 @@ for name, job in jobs.items():
     else:
         assert job.get("permissions", flow["permissions"]) == {"contents":"read"}
         assert "gh release " not in str(job["steps"])
-assert jobs["verify"]["steps"][-1]["with"]["name"] == "verified-release"
+assert jobs["verify"]["steps"][-1]["with"]["name"] == "${{ inputs.pair && format('verified-{0}', inputs.version) || 'verified-release' }}"
 print("Build only is the read-only default. Publishing requires Publish, confirmation and verified assets.")

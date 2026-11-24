@@ -5,8 +5,8 @@ import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { setTimeout as delay } from 'node:timers/promises'
 
-const [exe, version] = process.argv.slice(2)
-const baseline = version === '0.1.0'
+const [exe, version, baseVersion = '0.1.0'] = process.argv.slice(2)
+const baseline = version === baseVersion
 const prefs = {
  style:'ASCII', mode:'Dark', accent:'Amber', scale:'115%', font:'Mono',
  effects:'Low', transparency:'Off', motion:'Off', sound:'On', volume:'50%',
@@ -35,7 +35,7 @@ try {
  if (!baseline) {
   // Offer only the older release to the installed 0.1.1 client.
   await page.route('https://api.github.com/**',route=>route.fulfill({json:[
-   {tag_name:'v0.1.0',body:'baseline',draft:false,prerelease:false}
+   {tag_name:'v'+baseVersion,body:'baseline',draft:false,prerelease:false}
   ]}))
   await page.getByRole('button',{name:'Check for updates'}).click()
   await expect(page.getByRole('status')).toContainText('Ploom is up to date')

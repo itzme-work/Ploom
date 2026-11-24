@@ -1,5 +1,16 @@
 name: Publish Ploom
 on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      mode:
+        type: string
+        default: Build only
+      pair:
+        type: boolean
+        default: true
   workflow_dispatch:
     inputs:
       version:
@@ -92,7 +103,7 @@ jobs:
           python3 ../../scripts/check-arm64.py deliver/Ploom-arm64.apk
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: official-${{ runner.os }}
+          name: ${{ inputs.pair && format('{0}-', inputs.version) || '' }}official-${{ runner.os }}
           retention-days: 3
           path: |
             apps/client/deliver/*.apk
@@ -111,7 +122,7 @@ jobs:
         with: {persist-credentials: false}
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          pattern: official-*
+          pattern: ${{ inputs.pair && format('{0}-official-*', inputs.version) || 'official-*' }}
           path: deliver
           merge-multiple: true
       - name: Verify signed installer and APK
@@ -127,7 +138,7 @@ jobs:
           bash scripts/verify-release-assets.sh
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: verified-release
+          name: ${{ inputs.pair && format('verified-{0}', inputs.version) || 'verified-release' }}
           path: deliver
           retention-days: 3
           if-no-files-found: error

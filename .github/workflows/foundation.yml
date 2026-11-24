@@ -32,6 +32,11 @@ jobs:
       - run: npm run build
       - run: cargo test --manifest-path src-tauri/Cargo.toml
       - run: npm run tauri -- build --debug
+      - name: Verify EXE and NSIS embedded cloud icons
+        shell: pwsh
+        run: |
+          $installer = (Get-ChildItem src-tauri/target/debug/bundle/nsis/*.exe).FullName
+          ../../scripts/windows/Test-CloudIcon.ps1 $installer "src-tauri/target/debug/ploom.exe"
       - name: Launch packaged Ploom in WebView2
         run: node e2e/windows-smoke.mjs
       - uses: actions/upload-artifact@v4
