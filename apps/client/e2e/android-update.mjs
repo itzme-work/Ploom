@@ -50,6 +50,10 @@ for(const [name,error] of [['offline',/network|download/i],['corrupt',/damaged|s
  await expect(update).toBeEnabled({timeout:60000})
  await expect(page.getByRole('status')).toContainText(error)
 }
+mode('slow')
+await update.click()
+await page.getByRole('button',{name:'Cancel download'}).click()
+await expect(page.getByRole('status')).toContainText('Download canceled',{timeout:60000})
 mode('good')
 await update.click()
 await installer('Cancel')

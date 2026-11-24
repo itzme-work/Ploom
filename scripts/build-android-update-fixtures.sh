@@ -2,15 +2,13 @@
 # Called in a disposable Actions checkout, only for x86_64 debug APKs.
 set -euo pipefail
 : "${RUNNER_TEMP:?}"
-mitmdump --set "confdir=$RUNNER_TEMP/proxy" --version
-# mitmproxy creates its CA on the first server start.
-mitmdump --set "confdir=$RUNNER_TEMP/proxy" --listen-host 127.0.0.1 --listen-port 18888 >"$RUNNER_TEMP/ca-init.log" 2>&1 &
-pid=$!
-for _ in {1..100}; do test -s "$RUNNER_TEMP/proxy/mitmproxy-ca-cert.pem" && break; sleep .1; done
-kill "$pid"
+openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 1 -subj /CN=Ploom-emulator-fixture \
+  -addext 'basicConstraints=critical,CA:TRUE' \
+  -addext 'subjectAltName=DNS:github.com,DNS:api.github.com,DNS:release-assets.githubusercontent.com' \
+  -keyout "$RUNNER_TEMP/fixture-key.pem" -out "$RUNNER_TEMP/fixture-cert.pem" 2>/dev/null
 debug=src-tauri/gen/android/app/src/debug
 mkdir -p "$debug/res/raw" "$debug/res/xml"
-cp "$RUNNER_TEMP/proxy/mitmproxy-ca-cert.pem" "$debug/res/raw/fixture_ca.pem"
+cp "$RUNNER_TEMP/fixture-cert.pem" "$debug/res/raw/fixture_ca.pem"
 echo '<network-security-config><debug-overrides><trust-anchors><certificates src="@raw/fixture_ca"/></trust-anchors></debug-overrides></network-security-config>' > "$debug/res/xml/fixture_trust.xml"
 python3 - "$debug/AndroidManifest.xml" <<'PY'
 from pathlib import Path
