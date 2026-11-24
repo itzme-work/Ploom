@@ -100,12 +100,12 @@ jobs:
         working-directory: .
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: {node-version: 22}
-      - run: sudo apt-get update -qq && sudo apt-get install -y minisign python3-yaml
-      - run: npm ci --prefix apps/client
-      - run: python3 scripts/test-codespaces-release.py
-      - run: /usr/bin/python3 scripts/test-release-modes.py
+      - name: Build the actual Codespaces image
+        run: docker build -t ploom-enrollment .devcontainer
+      - name: Run fresh and partial enrollment with the installed GNU signer
+        run: |
+          docker run --rm --network none -u vscode -v "$PWD:/src:ro" -w /src ploom-enrollment python3 -B scripts/test-codespaces-release.py
+          docker run --rm --network none -u vscode -v "$PWD:/src:ro" -w /src ploom-enrollment python3 -B scripts/test-release-modes.py
   verify-test-packages:
     needs: [android, windows]
     runs-on: ubuntu-latest
