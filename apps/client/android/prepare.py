@@ -16,9 +16,13 @@ permission = "android.permission.REQUEST_INSTALL_PACKAGES"
 if not any(node.get(key("name")) == permission for node in doc.findall("uses-permission")):
     ET.SubElement(doc, "uses-permission", {key("name"): permission})
 app = doc.find("application")
-if not any(node.get(key("authorities")) == "${applicationId}.updates" for node in app.findall("provider")):
-    provider = ET.SubElement(app, "provider", {key("name"): "work.itzme.ploom.UpdateFileProvider", key("authorities"): "${applicationId}.updates", key("exported"): "false", key("grantUriPermissions"): "true"})
+provider = next((node for node in app.findall("provider") if node.get(key("authorities")) == "${applicationId}.updates"), None)
+if provider is None:
+    provider = ET.SubElement(app, "provider", {key("authorities"): "${applicationId}.updates"})
     ET.SubElement(provider, "meta-data", {key("name"): "android.support.FILE_PROVIDER_PATHS", key("resource"): "@xml/update_paths"})
+provider.set(key("name"), "work.itzme.ploom.UpdateFileProvider")
+provider.set(key("exported"), "false")
+provider.set(key("grantUriPermissions"), "true")
 tree.write(manifest, encoding="utf-8", xml_declaration=True)
 paths = main / "res/xml/update_paths.xml"
 paths.parent.mkdir(exist_ok=True)
