@@ -1,5 +1,13 @@
 # Выпуск через браузер GitHub
 
+## Если новый Codespace открылся в Recovery Mode с ошибкой 1302
+
+Если вы уже скачали `partial.age`, сохраните архив, его пароль и старый Codespace. Следующие действия выполняются только в **новом** Codespace, который остановился в Recovery Mode. Если в нём уже есть ключи в `~/.ploom-enrollment`, сначала сохраните их по инструкции следующего раздела.
+
+1. После слияния исправления в `main` откройте **Terminal → New Terminal** в новом Codespace. В корне проекта выполните `git status --short --branch`. Для чистой ветки `main` выполните `git pull --ff-only origin main`. При другой ветке или локальных изменениях создайте новый Codespace на обновлённой `main`, сохранив текущий.
+2. В палитре команд (**F1**) выберите **Codespaces: Rebuild Container** и подтвердите пересборку. После открытия терминала выполните `whoami`, затем `cargo-tauri --version`. Ожидаются `vscode` и `tauri-cli 2.12.6`. При повторном Recovery Mode сохраните журнал **Codespaces: View Creation Log**.
+3. В Explorer загрузите скачанный `partial.age` в папку `.ploom-release` в корне проекта. Выполните `python3 scripts/rescue-enrollment.py import`, затем `python3 scripts/codespaces-release.py`. Сохраните старый Codespace до проверки полной внешней резервной копии.
+
 ## Если предыдущий запуск остановился с кодом 127
 
 Сохраните старый Codespace до проверки внешней резервной копии. После включения исправления в `main` выполните следующие действия в браузере.
