@@ -84,9 +84,28 @@ jobs:
             node apps/client/e2e/windows-update-pair.mjs "$dir/ploom.exe" $version
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
+  android-install:
+    needs: packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: {persist-credentials: false}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: tested-*
+          path: packages
+      - run: |
+          sudo chmod a+rw /dev/kvm
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;36.0.0"
+      - uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: 30
+          target: google_apis
+          arch: x86_64
+          script: bash scripts/android-update-pair.sh
   publish-preview:
     if: github.event_name == 'workflow_dispatch' && inputs.publish_preview && github.ref == 'refs/heads/main' && github.repository == 'itzme-work/Ploom' && github.actor == github.repository_owner
-    needs: windows-install
+    needs: [windows-install, android-install]
     runs-on: ubuntu-latest
     environment: ploom-release
     permissions:
