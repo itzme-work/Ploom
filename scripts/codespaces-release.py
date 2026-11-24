@@ -44,7 +44,7 @@ def encrypted(data, password, home, decrypt=False):
 def preflight():
     distro = platform.freedesktop_os_release().get("ID")
     if distro not in ("debian", "ubuntu") or platform.machine() != "x86_64" or not os.confstr("CS_GNU_LIBC_VERSION").startswith("glibc "):
-        sys.exit("Нужен Debian/Ubuntu x86_64 с glibc. Для старого Alpine сначала сохраните комплект по docs/codespaces-hotfix.md. Не перестраивайте старый Codespace.")
+        sys.exit("Нужен Debian/Ubuntu x86_64 с glibc. Для старого Alpine сначала сохраните комплект по docs/browser-release.md. Не перестраивайте старый Codespace.")
     for cmd in (["git","--version"], ["gh","--version"], ["gh","variable","set","--help"],
                 ["keytool","-help"], ["minisign","-v"], ["gpg","--version"],
                 ["gpgconf","--version"], ["cargo-tauri","--version"],
@@ -239,4 +239,4 @@ if __name__ == "__main__":
     try:
         main()
     except (OSError, subprocess.SubprocessError, ValueError, KeyError, EOFError) as error:
-        sys.exit(f"Настройка остановлена ({type(error).__name__}). Проверьте окружение, пароль и комплект файлов. См. docs/codespaces-hotfix.md.")
+        sys.exit(f"Настройка остановлена ({type(error).__name__}). Проверьте окружение, пароль и комплект файлов. См. docs/browser-release.md.")
