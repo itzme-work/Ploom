@@ -1,0 +1,150 @@
+name: Foundation
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+defaults:
+  run:
+    working-directory: apps/client
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 22}
+      - run: npm ci
+      - run: npm run build
+      - run: npm run lint
+      - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test
+      - run: npm audit
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Windows PowerShell wizard and loopback site
+        shell: powershell
+        run: ../../scripts/windows/Test-Wizard.ps1
+      - uses: actions/setup-node@v4
+        with: {node-version: 22}
+      - run: npm ci
+      - run: npm run build
+      - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - run: npm run tauri -- build --debug
+      - name: Launch packaged Ploom in WebView2
+        run: node e2e/windows-smoke.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ploom-windows-x64-debug
+          path: apps/client/src-tauri/target/debug/bundle/nsis/*.exe
+          if-no-files-found: error
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 22}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: 17}
+      - run: npm ci
+      - run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+      - run: rustup target add aarch64-linux-android
+      - run: npm run tauri -- android init --ci
+      - run: python3 android/prepare.py
+      - run: npm run tauri -- android build --debug --apk --target aarch64
+      - name: Verify ARM64 package and Android signature
+        run: |
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' -print -quit)
+          test -s "$apk"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$apk"
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 4 "$apk"
+          python3 ../../scripts/check-arm64.py "$apk"
+          unzip -Z1 "$apk" > "$RUNNER_TEMP/ploom-entries"
+          grep -Eq '^lib/arm64-v8a/.+\.so$' "$RUNNER_TEMP/ploom-entries"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ploom-android-arm64-debug
+          path: apps/client/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+  android-emulator:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 22}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: 17}
+      - run: npm ci
+      - run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          rustup target add x86_64-linux-android
+      - run: npm run tauri -- android init --ci
+      - run: python3 android/prepare.py
+      - run: npm run tauri -- android build --debug --apk --target x86_64
+      - name: Enable runner virtualization
+        run: sudo chmod a+rw /dev/kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          working-directory: apps/client
+          script: bash ../../scripts/android-smoke.sh
+  release-wizard:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 22}
+      - run: sudo apt-get update -qq && sudo apt-get install -y minisign python3-yaml
+      - run: npm ci --prefix apps/client
+      - run: python3 scripts/test-codespaces-release.py
+      - run: /usr/bin/python3 scripts/test-release-modes.py
+  verify-test-packages:
+    needs: [android, windows]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ploom-android-arm64-debug
+          path: test-android
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ploom-windows-x64-debug
+          path: test-windows
+      - uses: actions/setup-node@v4
+        with: {node-version: 22}
+      - run: npm ci --prefix apps/client
+      - name: Exercise package verification with disposable test identity
+        run: |
+          set -euo pipefail
+          umask 077
+          sudo apt-get update -qq
+          sudo apt-get install -y minisign
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;36.0.0"
+          scratch=$(mktemp -d)
+          trap 'rm -rf "$scratch"' EXIT
+          mkdir deliver
+          cp "$(find test-android -name '*.apk' -print -quit)" deliver/Ploom-arm64.apk
+          cp "$(find test-windows -name '*.exe' -print -quit)" deliver/Ploom.exe
+          export VERSION=0.1.0
+          cli=apps/client/node_modules/.bin/tauri
+          "$cli" signer generate --ci --password fixture --write-keys "$scratch/key" >/dev/null
+          TAURI_SIGNING_PRIVATE_KEY_PATH="$scratch/key" TAURI_SIGNING_PRIVATE_KEY_PASSWORD=fixture "$cli" signer sign --app-version "$VERSION" deliver/Ploom.exe >/dev/null
+          export PUBLIC_KEY="$(cat "$scratch/key.pub")"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs deliver/Ploom-arm64.apk > "$scratch/cert"
+          export CERT_DIGEST="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$scratch/cert")"
+          bash scripts/verify-release-assets.sh
+          jq -e '.version=="0.1.0" and (.platforms["windows-x86_64"].signature|length>0)' deliver/latest.json
+          mv deliver/Ploom.exe.sig "$scratch/saved.sig"
+          if bash scripts/verify-release-assets.sh >/dev/null 2>&1; then exit 1; fi

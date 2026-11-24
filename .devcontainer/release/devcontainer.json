@@ -1,0 +1,4 @@
+{
+  "name": "Ploom Release",
+  "build": {"dockerfile": "Dockerfile"}
+}
