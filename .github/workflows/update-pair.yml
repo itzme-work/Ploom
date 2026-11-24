@@ -1,0 +1,108 @@
+name: Check signed update pair
+on:
+  pull_request:
+    paths: ['scripts/check-update-pair.sh', '.github/workflows/update-pair.yml']
+  workflow_dispatch:
+    inputs:
+      baseline:
+        description: 'Successful Build only run for 0.1.0'
+        default: '45405812136'
+        required: true
+      candidate:
+        description: 'Successful Build only run for 0.1.1'
+        default: '45408186512'
+        required: true
+      publish_preview:
+        description: 'Publish the verified 0.1.1 files publicly as a GitHub prerelease'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  actions: read
+jobs:
+  packages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: {persist-credentials: false}
+      - name: Download verified packages from the two Build only runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASELINE: ${{ inputs.baseline || '45405812136' }}
+          CANDIDATE: ${{ inputs.candidate || '45408186512' }}
+        run: |
+          set -euo pipefail
+          download() {
+            local id=$1 dir=$2
+            [[ "$id" =~ ^[0-9]+$ ]]
+            gh api "repos/itzme-work/Ploom/actions/runs/$id" | jq -e '
+              .path == ".github/workflows/release.yml" and .head_branch == "main" and
+              .event == "workflow_dispatch" and .conclusion == "success" and
+              .head_repository.full_name == "itzme-work/Ploom"' >/dev/null
+            gh run download "$id" -R itzme-work/Ploom -n verified-release -D "$dir"
+          }
+          download "$BASELINE" baseline
+          download "$CANDIDATE" candidate
+      - name: Compare packages and exercise foreign signatures
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y minisign
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;36.0.0"
+          ANDROID_BUILD_TOOLS="$ANDROID_HOME/build-tools/36.0.0" bash scripts/check-update-pair.sh baseline candidate
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: tested-0.1.1
+          path: candidate/
+          retention-days: 14
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: tested-0.1.0
+          path: baseline/
+          retention-days: 14
+  windows-install:
+    needs: packages
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: {persist-credentials: false}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: tested-*
+          path: packages
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - run: npm ci
+        working-directory: apps/client
+      - name: Install both signed packages in place and compare preferences
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'installed-ploom'
+          foreach ($version in '0.1.0','0.1.1') {
+            $installer = (Resolve-Path "packages/tested-$version/Ploom.exe").Path
+            $proc = Start-Process $installer -ArgumentList "/S /D=$dir" -Wait -PassThru
+            if ($proc.ExitCode -ne 0) { throw "NSIS exit $($proc.ExitCode)" }
+            node apps/client/e2e/windows-update-pair.mjs "$dir/ploom.exe" $version
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+  publish-preview:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_preview && github.ref == 'refs/heads/main' && github.repository == 'itzme-work/Ploom' && github.actor == github.repository_owner
+    needs: windows-install
+    runs-on: ubuntu-latest
+    environment: ploom-release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with: {name: tested-0.1.1, path: candidate}
+      - name: Publish verified files as a prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE: ${{ inputs.candidate }}
+        run: |
+          set -euo pipefail
+          repo=itzme-work/Ploom
+          sha=$(gh api "repos/$repo/actions/runs/$CANDIDATE" --jq '.head_sha')
+          refs=$(gh api "repos/$repo/git/matching-refs/tags/v0.1.1")
+          jq -e 'all(.[]; .ref != "refs/tags/v0.1.1")' <<< "$refs" >/dev/null
+          gh release create v0.1.1 -R "$repo" --draft --prerelease --target "$sha" --title "Ploom 0.1.1 (проверка обновления)" --notes "Предварительный релиз для проверки обновления с 0.1.0." candidate/{Ploom.exe,Ploom.exe.sig,Ploom-arm64.apk,latest.json}
+          gh release edit v0.1.1 -R "$repo" --draft=false --prerelease --latest=false
