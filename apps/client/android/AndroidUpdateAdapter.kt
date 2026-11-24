@@ -1,6 +1,7 @@
 package work.itzme.ploom
 
 import android.app.Activity
+import android.content.ClipData
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -13,10 +14,17 @@ import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.Plugin
 import java.io.File
+import java.io.IOException
 import java.net.URL
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.HttpsURLConnection
+
+// Android registers providers by component class as well as authority. Tauri already uses FileProvider.
+class UpdateFileProvider : FileProvider()
+
+@InvokeArg
+class BrowserArgs { lateinit var expected: String }
 
 @InvokeArg
 class InstallArgs { lateinit var expected: String; lateinit var progress: app.tauri.plugin.Channel }
@@ -25,14 +33,39 @@ class InstallArgs { lateinit var expected: String; lateinit var progress: app.ta
 class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
     private val busy = AtomicBoolean(false)
 
+    private val lock = Any()
+    private var download: AtomicBoolean? = null
+
+    private fun asset(version: String): URL {
+        require(Regex("[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?").matches(version))
+        return URL("https://github.com/itzme-work/Ploom/releases/download/v$version/Ploom-arm64.apk")
+    }
+
+    @Command
+    fun openBrowser(invoke: Invoke) {
+        try {
+            val url = asset(invoke.parseArgs(BrowserArgs::class.java).expected)
+            host.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url.toString())).addCategory(Intent.CATEGORY_BROWSABLE))
+            invoke.resolve()
+        } catch (e: Exception) { invoke.reject(e.message ?: "Browser unavailable") }
+    }
+
+    @Command
+    fun cancel(invoke: Invoke) {
+        synchronized(lock) { download?.set(true) }
+        invoke.resolve()
+    }
+
     @Command
     fun install(invoke: Invoke) {
         if (!busy.compareAndSet(false, true)) { invoke.reject("Installation in progress"); return }
+        val canceled = AtomicBoolean(false)
+        synchronized(lock) { download = canceled }
         Thread {
             try {
                 val args = invoke.parseArgs(InstallArgs::class.java)
                 val version = args.expected
-                require(Regex("[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?").matches(version))
+                val source = asset(version)
                 val pm = host.packageManager
                 if (pm.getInstallerPackageName(host.packageName) == "com.android.vending") {
                     host.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id="+host.packageName)))
@@ -44,12 +77,16 @@ class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
                     host.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:"+host.packageName)))
                     error("Allow installation from Ploom and retry")
                 }
-                val dir = File(host.cacheDir, "updates").apply { mkdirs() }
+                val dir = File(host.filesDir, "updates").apply { mkdirs() }
                 val apk = File.createTempFile("ploom-", ".apk", dir)
                 var handedOff = false
                 try {
                     dir.listFiles()?.filter { it != apk && it.lastModified() < System.currentTimeMillis()-86400000 }?.forEach { it.delete() }
-                    fetch(version, apk, args.progress)
+                    fetch(source, apk, args.progress, canceled)
+                    synchronized(lock) {
+                        check(!canceled.get()) { "Download canceled" }
+                        download = null
+                    }
                     args.progress.sendObject(listOf("verify", apk.length(), apk.length()))
                     val verification = com.android.apksig.ApkVerifier.Builder(apk).setMinCheckedPlatformVersion(Build.VERSION.SDK_INT).setMaxCheckedPlatformVersion(Build.VERSION.SDK_INT).build().verify()
                     require(verification.isVerified && (verification.isVerifiedUsingV2Scheme || verification.isVerifiedUsingV3Scheme)) { "APK signature verification failed" }
@@ -64,21 +101,33 @@ class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
                     require(trusted.isNotEmpty() && trusted == signers(archive)) { "APK signer rejected" }
                     args.progress.sendObject(listOf("install", apk.length(), apk.length()))
                     val uri = FileProvider.getUriForFile(host, host.packageName+".updates", apk)
-                    host.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri,"application/vnd.android.package-archive").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                    host.contentResolver.openFileDescriptor(uri, "r").use {
+                        check(it != null && it.statSize == apk.length()) { "Installer cannot read APK" }
+                    }
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(uri, "application/vnd.android.package-archive")
+                        clipData = ClipData.newRawUri("Ploom APK", uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    host.startActivity(intent)
                     handedOff = true
                     invoke.resolve()
                 } finally { if (!handedOff) apk.delete() }
+            } catch (e: IOException) {
+                invoke.reject(if (canceled.get()) "Download canceled" else "Network or file read failed")
             } catch (e: Exception) { invoke.reject(e.message ?: "Update failed") }
-            finally { busy.set(false) }
+            finally { synchronized(lock) { download = null }; busy.set(false) }
         }.start()
     }
 
-    private fun fetch(version: String, target: File, progress: app.tauri.plugin.Channel) {
-        var url = URL("https://github.com/itzme-work/Ploom/releases/download/v$version/Ploom-arm64.apk")
+    private fun fetch(source: URL, target: File, progress: app.tauri.plugin.Channel, canceled: AtomicBoolean) {
+        var url = source
         repeat(5) {
+            check(!canceled.get()) { "Download canceled" }
             require(url.protocol == "https" && url.host in setOf("github.com","release-assets.githubusercontent.com") && url.port in setOf(-1,443))
             val connection = url.openConnection() as HttpsURLConnection
             try {
+                connection.setRequestProperty("Accept-Encoding", "identity")
                 connection.instanceFollowRedirects = false
                 connection.connectTimeout = 15000
                 connection.readTimeout = 30000
@@ -86,20 +135,30 @@ class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
                     url = URL(url, requireNotNull(connection.getHeaderField("Location")))
                 } else {
                     require(connection.responseCode == 200) { "Download HTTP "+connection.responseCode }
-                    val limit = 256L * 1024 * 1024
-                    require(connection.contentLengthLong <= limit)
+                    val expected = connection.contentLengthLong
+                    ApkDownload.checkHeader(expected, target.parentFile!!.usableSpace)
+                    var received = 0L
                     connection.inputStream.use { input -> target.outputStream().use { output ->
                         val buffer = ByteArray(65536)
-                        var size = 0L
+                        var nextReport = 0L
                         while (true) {
+                            check(!canceled.get()) { "Download canceled" }
                             val n = input.read(buffer)
                             if (n == -1) break
-                            size += n
-                            require(size <= limit) { "APK exceeds size limit" }
-                            output.write(buffer,0,n)
-                            if (size % 1048576 < n) progress.sendObject(listOf("download", size, connection.contentLengthLong.takeIf { it > 0 }))
+                            received += n
+                            require(received <= ApkDownload.LIMIT) { "Invalid download size" }
+                            try { output.write(buffer,0,n) } catch (e: IOException) {
+                                if (target.parentFile!!.usableSpace < n || e.message?.contains("ENOSPC") == true) error("Not enough storage")
+                                throw e
+                            }
+                            if (received >= nextReport) {
+                                progress.sendObject(listOf("download", received, expected.takeIf { it > 0 }))
+                                nextReport = received + 262144
+                            }
                         }
                     } }
+                    ApkDownload.checkComplete(received, expected)
+                    progress.sendObject(listOf("download", received, received))
                     return
                 }
             } finally { connection.disconnect() }

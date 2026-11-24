@@ -21,3 +21,19 @@ pub async fn install_update(
         .await
         .map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub async fn cancel_download(app: tauri::AppHandle) -> Result<(), String> {
+    app.state::<PluginHandle<tauri::Wry>>()
+        .run_mobile_plugin_async("cancel", serde_json::json!({}))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn open_update_browser(app: tauri::AppHandle, expected: String) -> Result<(), String> {
+    app.state::<PluginHandle<tauri::Wry>>()
+        .run_mobile_plugin_async("openBrowser", serde_json::json!({"expected":expected}))
+        .await
+        .map_err(|e| e.to_string())
+}

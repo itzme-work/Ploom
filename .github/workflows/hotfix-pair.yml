@@ -1,0 +1,40 @@
+name: Build signed hotfix pair
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [.github/workflows/hotfix-pair.yml]
+permissions:
+  contents: read
+jobs:
+  baseline:
+    if: github.repository == 'itzme-work/Ploom' && github.ref == 'refs/heads/main' && github.actor == github.repository_owner
+    uses: ./.github/workflows/signed-packages.yml
+    with: {version: '0.1.2', mode: Build only, pair: true}
+  candidate:
+    needs: baseline
+    uses: ./.github/workflows/signed-packages.yml
+    with: {version: '0.1.3', mode: Build only, pair: true}
+  windows:
+    needs: candidate
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: {persist-credentials: false}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with: {pattern: 'verified-*', path: packages}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - run: npm ci
+        working-directory: apps/client
+      - shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'installed-ploom'
+          foreach ($version in '0.1.2','0.1.3') {
+            $installer = (Resolve-Path "packages/verified-$version/Ploom.exe").Path
+            $proc = Start-Process $installer -ArgumentList "/S /D=$dir" -Wait -PassThru
+            if ($proc.ExitCode -ne 0) { throw "NSIS exit $($proc.ExitCode)" }
+            node apps/client/e2e/windows-update-pair.mjs "$dir/ploom.exe" $version 0.1.2
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            ./scripts/windows/Test-CloudIcon.ps1 $installer "$dir/ploom.exe"
+          }

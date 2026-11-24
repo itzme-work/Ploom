@@ -16,6 +16,8 @@ function App() {
 			p.language === "Русский" ||
 			(p.language === "System" && navigator.language.startsWith("ru")),
 		t = (a: string, b: string) => (ru ? a : b);
+	const [downloading, setDownloading] = useState(false);
+	const android = isTauri() && /Android/.test(navigator.userAgent);
 	const [available, offer] = useState("");
 	const pages = [
 		t("Главная", "Home"),
@@ -241,11 +243,13 @@ function App() {
 										onClick={async () => {
 											loading(true);
 											try {
+												setDownloading(true);
 												show(t("Загрузка", "Downloading"));
 												const progress = new Channel<
 													[string, number, number | null]
 												>();
-												progress.onmessage = ([phase, n, total]) =>
+												progress.onmessage = ([phase, n, total]) => {
+													setDownloading(phase === "download");
 													show(
 														phase === "verify"
 															? t("Проверка подписи", "Verifying signature")
@@ -257,6 +261,7 @@ function App() {
 																		? Math.floor((100 * n) / total) + "%"
 																		: Math.ceil(n / 1024) + " KiB"),
 													);
+												};
 												await invoke("install_update", {
 													channel: p.channel,
 													expected: available,
@@ -286,6 +291,49 @@ function App() {
 															"Installation stopped because the update signature could not be verified.",
 														),
 													);
+												} else if (/Download canceled/i.test(detail)) {
+													show(
+														t(
+															"Загрузка отменена. Можно повторить обновление.",
+															"Download canceled. You can retry the update.",
+														),
+													);
+												} else if (/Not enough storage|ENOSPC/i.test(detail)) {
+													show(
+														t(
+															"Недостаточно места. Освободите память и повторите загрузку.",
+															"Storage is full. Free some space and retry.",
+														),
+													);
+												} else if (
+													/Incomplete APK|Invalid APK|Invalid download size/i.test(
+														detail,
+													)
+												) {
+													show(
+														t(
+															"Файл APK неполный или повреждён. Повторите загрузку.",
+															"The APK is incomplete or damaged. Download it again.",
+														),
+													);
+												} else if (
+													/Network or file read failed|Download HTTP/i.test(
+														detail,
+													)
+												) {
+													show(
+														t(
+															"Не удалось скачать APK. Проверьте сеть и повторите загрузку.",
+															"Could not download the APK. Check the network and retry.",
+														),
+													);
+												} else if (/Incompatible APK version/i.test(detail)) {
+													show(
+														t(
+															"Пакет или версия не подходят для обновления.",
+															"This package or version cannot update the installed app.",
+														),
+													);
 												} else if (/signing is not configured/i.test(detail)) {
 													show(
 														t(
@@ -302,6 +350,7 @@ function App() {
 													);
 												}
 											} finally {
+												setDownloading(false);
 												loading(false);
 											}
 										}}
@@ -309,6 +358,40 @@ function App() {
 										{t("Обновить Ploom", "Update Ploom")}
 									</button>
 								)}
+							{android && downloading && (
+								<button
+									onClick={() =>
+										invoke("cancel_download").catch(() =>
+											show(
+												t(
+													"Не удалось отменить загрузку",
+													"Could not cancel download",
+												),
+											),
+										)
+									}
+								>
+									{t("Отменить загрузку", "Cancel download")}
+								</button>
+							)}
+							{android && available && !busy && (
+								<button
+									onClick={() =>
+										invoke("open_update_browser", {
+											expected: available,
+										}).catch(() =>
+											show(
+												t(
+													"Не удалось открыть браузер",
+													"Could not open browser",
+												),
+											),
+										)
+									}
+								>
+									{t("Скачать APK через браузер", "Download APK in browser")}
+								</button>
+							)}
 							<details>
 								<summary>{t("Что нового", "What’s new")}</summary>
 								{current} · Foundation · Apache-2.0
