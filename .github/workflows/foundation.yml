@@ -94,18 +94,27 @@ jobs:
           working-directory: apps/client
           script: bash ../../scripts/android-smoke.sh
   release-wizard:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     defaults:
       run:
         working-directory: .
     steps:
       - uses: actions/checkout@v4
-      - name: Build the actual Codespaces image
-        run: docker build -t ploom-enrollment .devcontainer
-      - name: Run fresh and partial enrollment with the installed GNU signer
+      - name: Guard the Codespaces Dockerfile dialect
         run: |
-          docker run --rm --network none -u vscode -v "$PWD:/src:ro" -w /src ploom-enrollment python3 -B scripts/test-codespaces-release.py
-          docker run --rm --network none -u vscode -v "$PWD:/src:ro" -w /src ploom-enrollment python3 -B scripts/test-release-modes.py
+          if grep -Ein '^[[:space:]]*(ADD([[:space:]]|$)|#[[:space:]]*syntax[[:space:]]*=|RUN[[:space:]]+--)' .devcontainer/Dockerfile; then
+            echo 'Use stable, portable FROM and RUN instructions for enrollment.'
+            exit 1
+          fi
+      - name: Start the configured container with the Codespaces CLI version
+        run: |
+          npm install --prefix "$RUNNER_TEMP/ploom-cli" @devcontainers/cli@0.83.3
+          echo "$RUNNER_TEMP/ploom-cli/node_modules/.bin" >> "$GITHUB_PATH"
+          docker buildx use default
+          "$RUNNER_TEMP/ploom-cli/node_modules/.bin/devcontainer" up --workspace-folder .
+      - name: Validate tools and enrollment as the configured remote user
+        run: |
+          devcontainer exec --workspace-folder . sh -ec 'test "$(id -un)" = vscode; . /etc/os-release; test "$VERSION_ID" = 12; python3 -B scripts/test-codespaces-release.py; python3 -B scripts/test-release-modes.py'
   verify-test-packages:
     needs: [android, windows]
     runs-on: ubuntu-latest
