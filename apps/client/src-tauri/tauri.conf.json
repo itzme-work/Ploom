@@ -27,6 +27,19 @@
           "permissions": [
             "allow-install-update"
           ]
+        },
+        {
+          "identifier": "android-download",
+          "platforms": [
+            "android"
+          ],
+          "windows": [
+            "main"
+          ],
+          "permissions": [
+            "allow-cancel-download",
+            "allow-open-update-browser"
+          ]
         }
       ]
     }
@@ -35,7 +48,18 @@
     "active": true,
     "targets": [
       "nsis"
-    ]
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico"
+      }
+    }
   },
   "plugins": {
     "updater": {

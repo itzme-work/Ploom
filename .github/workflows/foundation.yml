@@ -77,6 +77,7 @@ jobs:
         with: {node-version: 22}
       - uses: actions/setup-java@v4
         with: {distribution: temurin, java-version: 17}
+      - run: pipx install mitmproxy==11.0.2 --python python3.12
       - run: npm ci
       - run: |
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018"
@@ -92,7 +93,12 @@ jobs:
           api-level: 35
           arch: x86_64
           working-directory: apps/client
-          script: bash ../../scripts/android-smoke.sh
+          script: |
+            adb install "$RUNNER_TEMP/base.apk"
+            adb shell appops set work.itzme.ploom REQUEST_INSTALL_PACKAGES allow
+            adb reverse tcp:18888 tcp:18888
+            adb shell settings put global http_proxy 127.0.0.1:18888
+            bash ../../scripts/run-android-update-fixture.sh
   release-wizard:
     runs-on: ubuntu-22.04
     defaults:
