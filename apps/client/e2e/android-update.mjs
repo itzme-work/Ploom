@@ -54,8 +54,15 @@ await installer('Cancel')
 await update.click()
 await installer('Update|Install')
 await expect.poll(()=>shell('dumpsys','package',pkg),{timeout:60000}).toContain('versionName=0.1.3')
-launch()
-const upgraded=await webview()
+// PackageManager can expose the new version before the old WebView finishes exiting.
+await expect.poll(()=>page.isClosed(),{timeout:60000}).toBe(true)
+shell('am','force-stop',pkg)
+let upgraded
+await expect(async()=>{
+ launch()
+ upgraded=await webview()
+ await expect(upgraded.getByText('Ploom 0.1.3 · Beta',{exact:true})).toBeVisible()
+}).toPass({timeout:90000})
 for(const [name,value] of Object.entries(desired)) await expect(upgraded.getByRole('combobox',{name,exact:true})).toHaveValue(value)
 console.log('Android system installer upgraded the app; all preferences survived.')
 process.exit(0)
