@@ -17,6 +17,12 @@ spec.loader.exec_module(wizard)
 
 class Enrollment(unittest.TestCase):
     def test_round_trip_and_repeat(self):
+        self.exercise(False)
+
+    def test_resume_after_android_generation(self):
+        self.exercise(True)
+
+    def exercise(self, partial):
         with tempfile.TemporaryDirectory() as temp, contextlib.ExitStack() as mocks:
             root = Path(temp)
             oldcwd = Path.cwd()
@@ -25,7 +31,13 @@ class Enrollment(unittest.TestCase):
                 mocks.enter_context(patch.object(wizard, name, value))
             stored, bindings = {}, {}
             signpass = "fixture-signer-password"
-            tool = str(oldcwd / "apps/client/node_modules/.bin/tauri")
+            tool = shutil.which("cargo-tauri")
+            self.assertIsNotNone(tool)
+            if partial:
+                wizard.WORK.mkdir(mode=0o700)
+                (wizard.WORK / "android-password").write_text("test-only-pass")
+                wizard.run(["keytool","-genkeypair","-alias","ploom","-keyalg","RSA","-dname","CN=Partial fixture","-storetype","PKCS12","-keystore",str(wizard.WORK / "android.p12"),"-storepass","test-only-pass"])
+                original_store = (wizard.WORK / "android.p12").read_bytes()
             original = wizard.run
             def run(args, data=None, extra=None):
                 if args[0] == "git":
@@ -42,6 +54,9 @@ class Enrollment(unittest.TestCase):
                     if "commits/main" in args[2]: return b"abc"
                     return b'{"default_branch":"main","owner":{"login":"itzme-work"}}'
                 target = stored if args[1] == "secret" else bindings
+                if args[2] == "delete":
+                    del target[args[3]]
+                    return b""
                 if args[2] == "set":
                     self.assertNotIn(args[3],target)
                     target[args[3]] = data.decode()
@@ -65,7 +80,7 @@ exec "$FIXTURE_TOOL" "$@"
                         interrupted = False
                         raise KeyboardInterrupt
                     shutil.copyfile(wizard.FILES / "ploom-release.gpg", wizard.FILES / "restore.gpg")
-                return wizard.REPO
+                return "CLEAN" if "CLEAN" in prompt else wizard.REPO
             mocks.enter_context(patch.dict(os.environ, {"CODESPACES":"true","GITHUB_REPOSITORY":wizard.REPO,"FIXTURE_TOOL":tool,"FIXTURE_PASSWORD":signpass}))
             os.environ.pop("GITHUB_ACTIONS", None)
             mocks.enter_context(patch.object(sys.stdin,"isatty",return_value=True))
@@ -78,6 +93,7 @@ exec "$FIXTURE_TOOL" "$@"
                 wizard.main()
             self.assertTrue((wizard.WORK / "updater.key").is_file())
             self.assertFalse(stored)
+            if partial: self.assertEqual((wizard.WORK / "android.p12").read_bytes(), original_store)
             shutil.copyfile(wizard.FILES / "ploom-release.gpg", wizard.FILES / "restore.gpg")
             wizard.main()
             self.assertFalse(wizard.WORK.exists())

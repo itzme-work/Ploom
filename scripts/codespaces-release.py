@@ -3,30 +3,26 @@
 import base64
 import getpass
 import hashlib
-import io
 import json
 import os
 from pathlib import Path
+import platform
 import secrets
 import shutil
 import subprocess
 import sys
-import tarfile
 import tempfile
-import urllib.request
 
 REPO = "itzme-work/Ploom"
 ENV = "ploom-release"
 ROOT = Path(__file__).resolve().parents[1]
 FILES = ROOT / ".ploom-release"
 WORK = Path.home() / ".ploom-enrollment"
-TOOL = "https://github.com/tauri-apps/tauri/releases/download/tauri-cli-v2.12.6/cargo-tauri-x86_64-unknown-linux-gnu.tgz"
-SHA = "057983293b14d88b29331f96b2e57ce9780f887e7a0b76e255844924f83118dc"
 SECRET_NAMES = ("RELEASE_ANDROID_PASSWORD", "RELEASE_ANDROID_P12_BASE64", "RELEASE_TAURI_PASSWORD", "RELEASE_TAURI_KEY")
 
 
 def run(args, data=None, extra=None):
-    return subprocess.run(args, input=data, check=True, stdout=subprocess.PIPE,
+    return subprocess.run(args, input=data, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE if args[0] == "gh" else None,
                           env={**os.environ, **(extra or {})}).stdout
 
 
@@ -45,17 +41,24 @@ def encrypted(data, password, home, decrypt=False):
         os.close(read)
 
 
+def preflight():
+    distro = platform.freedesktop_os_release().get("ID")
+    if distro not in ("debian", "ubuntu") or platform.machine() != "x86_64" or not os.confstr("CS_GNU_LIBC_VERSION").startswith("glibc "):
+        sys.exit("Нужен Debian/Ubuntu x86_64 с glibc. Для старого Alpine сначала сохраните комплект по docs/browser-release.md. Не перестраивайте старый Codespace.")
+    for cmd in (["git","--version"], ["gh","--version"], ["gh","variable","set","--help"],
+                ["keytool","-help"], ["minisign","-v"], ["gpg","--version"],
+                ["gpgconf","--version"], ["cargo-tauri","--version"],
+                ["cargo-tauri","signer","generate","--help"], ["cargo-tauri","signer","sign","--help"]):
+        try:
+            result = subprocess.run(cmd, capture_output=True, check=True, timeout=20)
+        except (OSError, subprocess.SubprocessError):
+            sys.exit(f"Не запускается {cmd[0]}. Используйте новый Codespace с конфигурацией Ploom Release — Debian 12. Существующие ключи сохранены.")
+        if cmd == ["cargo-tauri","--version"] and result.stdout.strip() != b"tauri-cli 2.12.6":
+            sys.exit("Требуется проверенный cargo-tauri 2.12.6 из devcontainer.")
+
+
 def signer():
-    binary = WORK / "cargo-tauri"
-    with urllib.request.urlopen(TOOL, timeout=90) as response:
-        archive = response.read(64 * 1024 * 1024)
-    if hashlib.sha256(archive).hexdigest() != SHA:
-        sys.exit("Checksum mismatch for the official signer.")
-    with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as bundle:
-        entry, = [m for m in bundle if m.isfile() and Path(m.name).name == "cargo-tauri"]
-        binary.write_bytes(bundle.extractfile(entry).read())
-    binary.chmod(0o700)
-    return str(binary)
+    return shutil.which("cargo-tauri")
 
 
 def generate(tool):
@@ -69,8 +72,10 @@ def generate(tool):
         run(["keytool", "-genkeypair", "-keystore", str(WORK / "android.p12"), "-storetype", "PKCS12",
          "-alias", "ploom", "-keyalg", "RSA", "-keysize", "3072", "-validity", "10000",
          "-dname", "CN=Ploom Release", "-storepass:env", "PLOOM_PASS"], extra={"PLOOM_PASS": android})
-    print("Введите новый пароль Tauri в запросе подписывающей утилиты. Сохраните его в менеджере паролей.", flush=True)
+    if (WORK / "updater.key").exists() != (WORK / "updater.key.pub").exists():
+        sys.exit("Неполная пара Tauri: восстановите исходные файлы. Перезапись заблокирована.")
     if not (WORK / "updater.key").exists():
+        print("Задайте пароль нового ключа Tauri в скрытом запросе.", flush=True)
         subprocess.run([tool, "signer", "generate", "-w", str(WORK / "updater.key")], check=True,
                    stdout=subprocess.DEVNULL)
     password = getpass.getpass("Повторите пароль Tauri для проверки: ")
@@ -107,11 +112,16 @@ def main():
     os.umask(0o077)
     if os.getenv("CODESPACES") != "true" or os.getenv("GITHUB_REPOSITORY", "").lower() != REPO.lower() or os.getenv("GITHUB_ACTIONS") or not sys.stdin.isatty():
         sys.exit("Запустите мастер в личном интерактивном Codespace.")
+    preflight()
     os.chdir(ROOT)
     os.environ["GH_HOST"] = "github.com"
     os.environ.pop("GH_DEBUG", None)
     def gh(*args, data=None):
-        return run(["gh", *args], data).decode().strip()
+        try:
+            return run(["gh", *args], data).decode().strip()
+        except subprocess.CalledProcessError as exc:
+            status = next((code for code in ("401","403","404") if code.encode() in (exc.stderr or b"")), str(exc.returncode))
+            sys.exit(f"GitHub ({status}). GitHub CLI не выполнил запрос. При HTTP 401/403 проверьте аккаунт и права Actions: read, Contents: read, Environments: read and write. Если Environment отсутствует, создайте ploom-release в Settings. Инструкция по скрытому вводу токена: docs/browser-release.md. Ключи не заменялись.")
     def git(*args):
         return run(["git", *args]).decode().strip()
     meta = json.loads(gh("api", f"repos/{REPO}"))
@@ -121,9 +131,6 @@ def main():
         sys.exit("Нужна чистая актуальная основная ветка официального репозитория.")
     if gh("api", "user", "--jq", ".login").lower() != meta["owner"]["login"].lower():
         sys.exit("Войдите как владелец официального репозитория.")
-    for command in ("keytool","minisign","gpg"):
-        if not shutil.which(command):
-            sys.exit(f"В Codespace отсутствует {command}. См. инструкцию.")
     envs = gh("api","--paginate",f"repos/{REPO}/environments","--jq",".environments[].name").splitlines()
     if ENV not in envs:
         gh("api","--method","PUT",f"repos/{REPO}/environments/{ENV}")
@@ -146,14 +153,27 @@ def main():
     pending = WORK.exists()
     if pending and (WORK.is_symlink() or WORK.stat().st_uid != os.getuid() or WORK.stat().st_mode & 0o077):
         sys.exit("Unsafe recovery directory")
+    if pending and any(p.is_symlink() for p in WORK.rglob("*")):
+        sys.exit("Ссылки в каталоге восстановления недопустимы.")
     if pending and not (WORK / "android-password").exists():
         sys.exit("Незавершённое восстановление. Проверьте наличие сохранённой внешней копии перед очисткой.")
     if backup.exists() and not returned.exists():
         sys.exit("Загрузите сохранённую копию обратно как restore.gpg.")
     if not returned.exists() and not pending and (existing.intersection(SECRET_NAMES) or {"UPDATER_PUBLIC_KEY","ANDROID_CERT_SHA256"}.intersection(bindings)):
         sys.exit("Привязки уже существуют. Загрузите исходную копию как .ploom-release/restore.gpg.")
+    if pending:
+        print("Обнаружен предыдущий комплект. Существующие ключи будут использованы повторно; мастер создаст только отсутствующую пару.")
     if input(f"Для продолжения введите {REPO}: ") != REPO:
         return
+    # A token may be able to list bindings while lacking permission to create them.
+    # Use a unique disposable name; never probe against a signing credential.
+    probe_name = "PLOOM_PREFLIGHT_" + secrets.token_hex(12).upper()
+    for kind in ("variable","secret"):
+        gh(kind,"set",probe_name,*scope,data=b"permission check")
+        try:
+            gh(kind,"delete",probe_name,*scope)
+        except SystemExit as exc:
+            sys.exit(f"{exc} Проверьте и удалите временную запись {probe_name} в ploom-release.")
     WORK.mkdir(mode=0o700, exist_ok=True)
     home = WORK / "gpg"
     home.mkdir(mode=0o700, exist_ok=True)
@@ -209,10 +229,14 @@ def main():
     finally:
         subprocess.run(["gpgconf","--homedir",str(home),"--kill","gpg-agent"], check=False)
         if verified or not generated:
-            shutil.rmtree(WORK)
+            if not pending or input("Резервная копия проверена. Введите CLEAN для удаления исходного каталога, Enter — сохранить: ") == "CLEAN":
+                shutil.rmtree(WORK)
         else:
             print(f"Исходный комплект сохранён в {WORK}. Не удаляйте Codespace до восстановления.")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (OSError, subprocess.SubprocessError, ValueError, KeyError, EOFError) as error:
+        sys.exit(f"Настройка остановлена ({type(error).__name__}). Проверьте окружение, пароль и комплект файлов. См. docs/browser-release.md.")

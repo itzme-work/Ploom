@@ -1,0 +1,5 @@
+{
+  "name": "Ploom Release — Debian 12",
+  "build": {"dockerfile": "Dockerfile"},
+  "remoteUser": "vscode"
+}
