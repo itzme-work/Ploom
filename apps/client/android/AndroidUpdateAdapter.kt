@@ -65,7 +65,7 @@ class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
             try {
                 val args = invoke.parseArgs(InstallArgs::class.java)
                 val version = args.expected
-                require(Regex("[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?").matches(version))
+                val source = asset(version)
                 val pm = host.packageManager
                 if (pm.getInstallerPackageName(host.packageName) == "com.android.vending") {
                     host.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id="+host.packageName)))
@@ -82,7 +82,7 @@ class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
                 var handedOff = false
                 try {
                     dir.listFiles()?.filter { it != apk && it.lastModified() < System.currentTimeMillis()-86400000 }?.forEach { it.delete() }
-                    fetch(asset(version), apk, args.progress, canceled)
+                    fetch(source, apk, args.progress, canceled)
                     synchronized(lock) {
                         check(!canceled.get()) { "Download canceled" }
                         download = null
@@ -135,10 +135,8 @@ class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
                     url = URL(url, requireNotNull(connection.getHeaderField("Location")))
                 } else {
                     require(connection.responseCode == 200) { "Download HTTP "+connection.responseCode }
-                    val limit = 256L * 1024 * 1024
                     val expected = connection.contentLengthLong
-                    require(expected in -1..limit && expected != 0L) { "Invalid download size" }
-                    if (expected > target.parentFile!!.usableSpace) error("Not enough storage")
+                    ApkDownload.checkHeader(expected, target.parentFile!!.usableSpace)
                     var received = 0L
                     connection.inputStream.use { input -> target.outputStream().use { output ->
                         val buffer = ByteArray(65536)
@@ -148,7 +146,7 @@ class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
                             val n = input.read(buffer)
                             if (n == -1) break
                             received += n
-                            require(received <= limit) { "Invalid download size" }
+                            require(received <= ApkDownload.LIMIT) { "Invalid download size" }
                             try { output.write(buffer,0,n) } catch (e: IOException) {
                                 if (target.parentFile!!.usableSpace < n || e.message?.contains("ENOSPC") == true) error("Not enough storage")
                                 throw e
@@ -159,7 +157,7 @@ class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
                             }
                         }
                     } }
-                    check(received > 0 && (expected < 0 || received == expected)) { "Incomplete APK" }
+                    ApkDownload.checkComplete(received, expected)
                     progress.sendObject(listOf("download", received, received))
                     return
                 }
