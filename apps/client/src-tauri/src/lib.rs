@@ -8,7 +8,11 @@ pub fn run() {
     #[cfg(target_os = "android")]
     let builder = builder
         .plugin(android::plugin())
-        .invoke_handler(tauri::generate_handler![android::install_update, android::cancel_download, android::open_update_browser]);
+        .invoke_handler(tauri::generate_handler![
+            android::install_update,
+            android::cancel_download,
+            android::open_update_browser
+        ]);
     #[cfg(windows)]
     let builder = builder
         .invoke_handler(tauri::generate_handler![windows::install_update])

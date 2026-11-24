@@ -89,7 +89,7 @@ jobs:
           rustup target add x86_64-linux-android
       - run: npm run tauri -- android init --ci
       - run: python3 android/prepare.py
-      - run: npm run tauri -- android build --debug --apk --target x86_64
+      - run: bash ../../scripts/build-android-update-fixtures.sh
       - name: Enable runner virtualization
         run: sudo chmod a+rw /dev/kvm
       - uses: reactivecircus/android-emulator-runner@v2

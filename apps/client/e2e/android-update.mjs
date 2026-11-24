@@ -1,5 +1,5 @@
 // Runs against the debug WebView on an API 35 emulator. Only the baseline is installed via adb.
-import { chromium } from 'playwright'
+import { _android as android } from 'playwright'
 import { expect } from '@playwright/test'
 import {execFileSync} from 'node:child_process'
 import {writeFileSync} from 'node:fs'
@@ -10,17 +10,11 @@ const shell=(...args)=>adb('shell',...args)
 const mode=name=>writeFileSync(process.env.RUNNER_TEMP+'/case',name)
 const launch=()=>shell('am','start','-W','-n',pkg+'/.MainActivity')
 async function webview(){
- for(let i=0;i<45;i++){
-  try{
-   const pid=shell('pidof',pkg)
-   adb('forward','tcp:19223','localabstract:webview_devtools_remote_'+pid)
-   const browser=await chromium.connectOverCDP('http://127.0.0.1:19223',{timeout:2000})
-   const page=browser.contexts()[0].pages()[0]
-   await page.getByRole('button',{name:'Settings',exact:true}).click({timeout:5000})
-   return page
-  }catch{await delay(1000)}
- }
- throw Error('Ploom WebView not ready')
+ const [device]=await android.devices()
+ const view=await device.webView({pkg},{timeout:60000})
+ const page=await view.page()
+ await page.getByRole('button',{name:'Settings',exact:true}).click()
+ return page
 }
 async function installer(action){
  for(let i=0;i<20;i++){

@@ -9,12 +9,12 @@ permissions:
 jobs:
   baseline:
     if: github.repository == 'itzme-work/Ploom' && github.ref == 'refs/heads/main' && github.actor == github.repository_owner
-    uses: ./.github/workflows/release.yml
-    with: {version: '0.1.2', mode: Build only}
+    uses: ./.github/workflows/signed-packages.yml
+    with: {version: '0.1.2', mode: Build only, pair: true}
   candidate:
     needs: baseline
-    uses: ./.github/workflows/release.yml
-    with: {version: '0.1.3', mode: Build only}
+    uses: ./.github/workflows/signed-packages.yml
+    with: {version: '0.1.3', mode: Build only, pair: true}
   windows:
     needs: candidate
     runs-on: windows-2022
