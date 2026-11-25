@@ -60,3 +60,8 @@ if engine:
         ET.SubElement(ET.SubElement(service, "intent-filter"), "action", {key("name"): "android.net.VpnService"})
         ET.SubElement(service, "meta-data", {key("name"): "android.net.VpnService.SUPPORTS_ALWAYS_ON", key("value"): "false"})
     tree.write(manifest, encoding="utf-8", xml_declaration=True)
+    licenses = main / "assets/licenses"
+    licenses.mkdir(parents=True, exist_ok=True)
+    for source in (root.parents[1] / "LICENSES").glob("*.txt"):
+        shutil.copyfile(source, licenses / source.name)
+    shutil.copyfile(root.parents[1] / "NOTICE", licenses / "NOTICE")

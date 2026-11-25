@@ -16,6 +16,7 @@ tauri = { version = "2", features = [] }
 
 [target.'cfg(windows)'.dependencies]
 semver = "1"
+sha2 = "0.10"
 tauri-plugin-updater = "2"
 reqwest = { version = "0.13", features = ["stream"] }
 
@@ -32,7 +33,7 @@ features = ["net", "time", "sync"]
 
 [target.'cfg(windows)'.dependencies.windows-sys]
 version="0.61"
-features=["Win32_Security_Cryptography","Win32_Foundation","Win32_UI_Shell","Win32_UI_WindowsAndMessaging"]
+features=["Win32_Security_Cryptography","Win32_Foundation","Win32_System_JobObjects","Win32_System_Threading","Win32_Security","Win32_UI_Shell","Win32_UI_WindowsAndMessaging"]
 [target.'cfg(windows)'.dependencies.tempfile]
 version="3"
 

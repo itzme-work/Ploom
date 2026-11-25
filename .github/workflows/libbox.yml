@@ -41,3 +41,46 @@ jobs:
           path: ${{ runner.temp }}/deliver
           retention-days: 7
           if-no-files-found: error
+  windows-proxy:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: {persist-credentials: false}
+      - uses: actions/setup-go@v5
+        with: {go-version: 1.26.10, cache: false}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - name: Build the reviewed Windows core and NSIS
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:CGO_ENABLED = '0'
+          $source = Join-Path $env:RUNNER_TEMP 'sing-box-source.tar.gz'
+          Invoke-WebRequest 'https://codeload.github.com/SagerNet/sing-box/tar.gz/c005f35300ce76427dc285481ec5695f5b179cd2' -OutFile $source
+          if ((Get-FileHash $source).Hash -ne '1c4d2b3bf261a8d98e1b026be0bbcddbcb3f53bbca77eb15e8f25f7d4e602e59') { throw 'Source digest mismatch' }
+          $engine = New-Item -Type Directory 'apps/client/src-tauri/engine'
+          $checkout = New-Item -Type Directory "$env:RUNNER_TEMP/sing-box"
+          tar xf $source -C $checkout.FullName --strip-components 1
+          Push-Location $checkout
+          go build -trimpath -buildvcs=false -tags 'with_quic,with_wireguard,with_utls,with_gvisor,badlinkname,tfogo_checklinkname0' -ldflags '-checklinkname=0 -X github.com/sagernet/sing-box/constant.Version=1.14.4' -o "$engine/sing-box.exe" ./cmd/sing-box
+          if ($LASTEXITCODE) { throw 'Core build failed' }
+          go mod verify
+          if ($LASTEXITCODE) { throw 'Go module verification failed' }
+          go version -m "$engine/sing-box.exe" > "$env:RUNNER_TEMP/windows-core-buildinfo.txt"
+          Pop-Location
+          Copy-Item LICENSES/GPL-3.0.txt,LICENSES/sing-box-1.14.4.txt,LICENSES/Apache-2.0.txt,NOTICE $engine
+          $env:PLOOM_CORE_SHA256 = (Get-FileHash "$engine/sing-box.exe").Hash.ToLowerInvariant()
+          Set-Location apps/client
+          npm ci
+          '{"bundle":{"resources":["engine/*"]}}' | Set-Content src-tauri/engine-config.json -Encoding utf8NoBOM
+          npm run tauri -- build --debug --bundles nsis --config src-tauri/engine-config.json
+          if ($LASTEXITCODE) { throw 'NSIS build failed' }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-x64-core-debug
+          path: |
+            apps/client/src-tauri/target/debug/bundle/nsis/*.exe
+            ${{ runner.temp }}/windows-core-buildinfo.txt
+          if-no-files-found: error
+          retention-days: 7

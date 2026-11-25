@@ -35,6 +35,7 @@
             "allow-library-export","allow-library-site"
           ]
         },
+        {"identifier":"windows-proxy","platforms":["windows"],"windows":["main"],"permissions":["allow-proxy-start","allow-proxy-stop","allow-proxy-state"]},
         {
           "identifier": "android-download",
           "platforms": [

@@ -32,32 +32,74 @@ function App() {
 	const [downloading, setDownloading] = useState(false);
 	const android = isTauri() && /Android/.test(navigator.userAgent);
 	const [tunnel, setTunnel] = useState("idle");
-    const [requesting, request] = useState(false);
-    useEffect(() => {
-        if (!android) return;
-        let alive=true;
-        const poll=()=>invoke<{state:string}>("tunnel_state").then(({state})=>{if(alive)setTunnel(state)}).catch(()=>{if(alive)setTunnel("unavailable")});
-        void poll();
-        const id=setInterval(poll,1500);
-        return ()=>{alive=false;clearInterval(id)};
-    }, [android]);
-    async function toggleTunnel() {
-        if (!android || tunnel==="unavailable" || !selectedServer && tunnel!=="tunnel-open") {
-            msg(t("Подключение запланировано на следующее крупное обновление.", "VPN support is planned for the next major update."));
-            return;
-        }
-        request(true);
-        try {
-            if (tunnel==="tunnel-open" || tunnel==="starting") await invoke("tunnel_stop");
-            else await invoke("tunnel_start",{raw:selectedServer?.raw});
-            msg("");
-        } catch(reason) {
-            const code=String(reason);
-            msg(code==="protocol"||code==="options" ? t("Протокол или параметры пока не поддерживаются.","Protocol or options are not supported yet.") :
-                t("Не удалось запустить VPN. Проверьте адрес и системное разрешение.","VPN startup failed. Check the endpoint and system permission."));
-        } finally {request(false)}
-    }
-    const [available, offer] = useState("");
+	const [proxyPort, setProxyPort] = useState<number>();
+	const windows = isTauri() && /Windows/.test(navigator.userAgent);
+	const [requesting, request] = useState(false);
+	useEffect(() => {
+		if (!android && !windows) return;
+		let alive = true;
+		const poll = () =>
+			invoke<{ state: string; port?: number }>(
+				android ? "tunnel_state" : "proxy_state",
+			)
+				.then(({ state, port }) => {
+					if (alive) {
+						setTunnel(state);
+						setProxyPort(port);
+					}
+				})
+				.catch(() => {
+					if (alive) setTunnel("unavailable");
+				});
+		void poll();
+		const id = setInterval(poll, 1500);
+		return () => {
+			alive = false;
+			clearInterval(id);
+		};
+	}, [android, windows]);
+	async function toggleTunnel() {
+		if (
+			(!android && !windows) ||
+			tunnel === "unavailable" ||
+			(!selectedServer && tunnel !== "tunnel-open")
+		) {
+			msg(
+				t(
+					"Подключение запланировано на следующее крупное обновление.",
+					"VPN support is planned for the next major update.",
+				),
+			);
+			return;
+		}
+		request(true);
+		try {
+			if (tunnel === "local-process") await invoke("proxy_stop");
+			else if (tunnel === "tunnel-open" || tunnel === "starting")
+				await invoke("tunnel_stop");
+			else
+				await invoke(android ? "tunnel_start" : "proxy_start", {
+					raw: selectedServer?.raw,
+				});
+			msg("");
+		} catch (reason) {
+			const code = String(reason);
+			msg(
+				code === "protocol" || code === "options"
+					? t(
+							"Протокол или параметры пока не поддерживаются.",
+							"Protocol or options are not supported yet.",
+						)
+					: t(
+							"Не удалось запустить VPN. Проверьте адрес и системное разрешение.",
+							"VPN startup failed. Check the endpoint and system permission.",
+						),
+			);
+		} finally {
+			request(false);
+		}
+	}
+	const [available, offer] = useState("");
 	const pages = [
 		t("Главная", "Home"),
 		t("Подписки", "Subscriptions"),
@@ -218,13 +260,34 @@ function App() {
 						<section className="hero">
 							<button
 								className="power"
-								aria-label={tunnel==="tunnel-open" ? t("Отключить","Disconnect") : t("Подключиться","Connect")}
-                                disabled={requesting}
-                                onClick={()=>void toggleTunnel()}
+								aria-label={
+									tunnel === "tunnel-open" || tunnel === "local-process"
+										? t("Отключить", "Disconnect")
+										: t("Подключиться", "Connect")
+								}
+								disabled={requesting}
+								onClick={() => void toggleTunnel()}
 							>
 								<Power size={46} />
 							</button>
-							<h2>{requesting ? t("Запрос разрешения","Requesting permission") : tunnel==="tunnel-open" ? t("TUN открыт · связь не проверена","TUN open · connectivity unverified") : tunnel==="starting" ? t("Подготовка","Preparing") : tunnel==="error" || tunnel==="revoked" ? t("Ошибка VPN","VPN error") : t("Отключено", "Disconnected")}</h2>
+							<h2>
+								{requesting
+									? t("Запрос разрешения", "Requesting permission")
+									: tunnel === "local-process"
+										? t("Локальный прокси", "Local proxy") +
+											" · 127.0.0.1:" +
+											proxyPort
+										: tunnel === "tunnel-open"
+											? t(
+													"TUN открыт · связь не проверена",
+													"TUN open · connectivity unverified",
+												)
+											: tunnel === "starting"
+												? t("Подготовка", "Preparing")
+												: tunnel === "error" || tunnel === "revoked"
+													? t("Ошибка VPN", "VPN error")
+													: t("Отключено", "Disconnected")}
+							</h2>
 							<p>
 								{selectedServer
 									? [

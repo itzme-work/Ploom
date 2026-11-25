@@ -1,6 +1,8 @@
 #[cfg(target_os = "android")]
 mod android;
 mod connection;
+#[cfg(windows)]
+mod proxy_windows;
 mod subscriptions;
 #[cfg(windows)]
 mod windows;
@@ -31,6 +33,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             subscriptions::library_site,
             windows::library_export,
+            proxy_windows::proxy_start,
+            proxy_windows::proxy_stop,
+            proxy_windows::proxy_state,
             windows::library_key,
             windows::install_update,
             subscriptions::subscription_fetch,
