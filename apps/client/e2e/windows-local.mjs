@@ -47,9 +47,17 @@ try {
   await page.getByRole('button',{name:'Import (1)',exact:true}).click()
   await page.getByRole('button',{name:'Servers',exact:true}).click()
   await page.getByRole('button',{name:'Select',exact:true}).click()
+  await expect(page.getByRole('button',{name:'Select',exact:true})).toHaveAttribute('aria-pressed','true')
   await page.getByRole('button',{name:'Home',exact:true}).click()
+  await expect(page.getByText(/fixture · http/i)).toBeVisible()
   await page.getByRole('button',{name:'Connect',exact:true}).click()
-  await page.getByRole('button',{name:'Confirm',exact:true}).click()
+  const confirm=page.getByRole('button',{name:'Confirm',exact:true})
+  try {await expect(confirm).toBeVisible({timeout:10000})} catch(error){
+    console.error('Synthetic profile, native state:',await page.evaluate(async()=>{
+      try {return await window.__TAURI_INTERNALS__.invoke('proxy_state')}catch(e){return String(e)}
+    }),'UI:',await page.locator('main').innerText());throw error
+  }
+  await confirm.click()
   const heading=page.getByRole('heading',{name:/Local proxy.*127\.0\.0\.1/})
   await expect(heading).toBeVisible()
   const port=Number((await heading.innerText()).split(':').at(-1))
