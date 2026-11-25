@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useConfirmation } from "./confirm";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import {
 	change,
@@ -56,6 +57,7 @@ export function Subscriptions({
 	consumed,
 }: Props & { incoming: string; consumed: () => void }) {
 	const t = (r: string, e: string) => (ru ? r : e);
+	const { ask, prompt } = useConfirmation(ru);
 	const { data, unlocked, error } = useLibrary();
 	const [text, setText] = useState(""),
 		[url, setUrl] = useState(""),
@@ -114,6 +116,7 @@ export function Subscriptions({
 	};
 	return (
 		<>
+			{prompt}
 			<section>
 				<h2>{t("Импорт подписки", "Import subscription")}</h2>
 				{!unlocked && (
@@ -219,10 +222,16 @@ export function Subscriptions({
 					{preview && (
 						<>
 							<p>
+								{name || feed?.title || t("Без названия", "Unnamed")} ·{" "}
 								{preview.format} · {preview.servers.length}{" "}
 								{t("корректных", "valid")} · {preview.invalid}{" "}
 								{t("повреждённых", "invalid")} · {preview.duplicates}{" "}
 								{t("дубликатов", "duplicates")}
+							</p>
+							<p>
+								{[...new Set(preview.servers.map((s) => s.protocol))].join(
+									", ",
+								)}
 							</p>
 							<button
 								onClick={() =>
@@ -345,7 +354,10 @@ export function Subscriptions({
 						</p>
 						<p>
 							{t("Срок", "Expiry")}:{" "}
-							{u.expire ? new Date(u.expire * 1000).toLocaleDateString() : na}
+							{u.expire ? new Date(u.expire * 1000).toLocaleDateString() : na}{" "}
+							{u.expire && u.expire * 1000 < Date.now()
+								? t("Истекла", "Expired")
+								: ""}
 						</p>
 						<fieldset disabled={busy}>
 							<button
@@ -443,7 +455,7 @@ export function Subscriptions({
 										onClick={() =>
 											run(async () => {
 												if (
-													confirm(
+													await ask(
 														t(
 															"Ссылка может содержать секрет. Копировать?",
 															"This URL can contain credentials. Copy?",
@@ -466,7 +478,7 @@ export function Subscriptions({
 									onClick={() =>
 										run(async () => {
 											if (
-												confirm(
+												await ask(
 													t(
 														"Удалить подписку и её серверы?",
 														"Delete the subscription and its servers?",
@@ -530,7 +542,7 @@ export function Subscriptions({
 											pass,
 										);
 										if (
-											confirm(
+											await ask(
 												t(
 													"Заменить библиотеку этой копией?",
 													"Replace the library with this backup?",
@@ -550,6 +562,7 @@ export function Subscriptions({
 }
 export function Servers({ ru }: Props) {
 	const t = (r: string, e: string) => (ru ? r : e);
+	const { ask, prompt } = useConfirmation(ru);
 	const { data } = useLibrary(),
 		[query, search] = useState(""),
 		[protocol, filter] = useState(""),
@@ -562,6 +575,18 @@ export function Servers({ ru }: Props) {
 		[msg, status] = useState(""),
 		[seconds, timeout] = useState(4),
 		[busy, working] = useState(false);
+	const [checked, mark] = useState<Set<string>>(new Set());
+	const labels: Record<string, string> = {
+		unknown: t("Не проверен", "Untested"),
+		tcp: t("TCP доступен", "TCP reachable"),
+		unsupported: t("TCP неприменим", "TCP not applicable"),
+		"error-tcp": t("Ошибка TCP", "TCP failed"),
+		"error-dns": t("Ошибка DNS", "DNS failed"),
+		"error-timeout": t("Таймаут", "Timed out"),
+		"error-address": t("Адрес заблокирован", "Address blocked"),
+		"error-busy": t("Занято", "Busy"),
+		error: t("Ошибка", "Error"),
+	};
 	const canceled = useRef(false);
 	useEffect(
 		() => () => {
@@ -569,33 +594,43 @@ export function Servers({ ru }: Props) {
 		},
 		[],
 	);
-	const all = data.subscriptions
-		.filter((s) => s.enabled)
-		.flatMap((sub) =>
-			sub.entries.filter((e) => !e.hidden).map((e) => ({ e, sub })),
-		);
-	const rows = all.filter(
-		({ e, sub }) =>
-			(!fav || e.favorite) &&
-			(!country || e.country === country) &&
-			(!protocol || e.protocol === protocol) &&
-			(!subId || sub.id === subId) &&
-			(!availability || (e.diagnosis?.result ?? "unknown") === availability) &&
-			[e.alias, e.name, e.country, e.protocol, sub.name, e.host]
-				.join(" ")
-				.toLowerCase()
-				.includes(query.toLowerCase()),
+	const all = useMemo(
+		() =>
+			data.subscriptions
+				.filter((s) => s.enabled)
+				.flatMap((sub) =>
+					sub.entries.filter((e) => !e.hidden).map((e) => ({ e, sub })),
+				),
+		[data],
 	);
-	if (sort !== "manual")
-		rows.sort((a, b) =>
-			sort === "name"
-				? (a.e.alias ?? a.e.name).localeCompare(b.e.alias ?? b.e.name)
-				: sort === "sub"
-					? a.sub.name.localeCompare(b.sub.name)
-					: sort === "date"
-						? b.e.added - a.e.added
-						: (a.e.diagnosis?.ms ?? Infinity) - (b.e.diagnosis?.ms ?? Infinity),
+	const rows = useMemo(() => {
+		const rows = all.filter(
+			({ e, sub }) =>
+				(!fav || e.favorite) &&
+				(!country || e.country === country) &&
+				(!protocol || e.protocol === protocol) &&
+				(!subId || sub.id === subId) &&
+				(!availability ||
+					(e.diagnosis?.result ?? "unknown") === availability) &&
+				[e.alias, e.name, e.country, e.protocol, sub.name, e.host]
+					.join(" ")
+					.toLowerCase()
+					.includes(query.toLowerCase()),
 		);
+		if (sort !== "manual")
+			rows.sort((a, b) =>
+				sort === "name"
+					? (a.e.alias ?? a.e.name).localeCompare(b.e.alias ?? b.e.name)
+					: sort === "sub"
+						? a.sub.name.localeCompare(b.sub.name)
+						: sort === "date"
+							? b.e.added - a.e.added
+							: (a.e.diagnosis?.ms ?? Infinity) -
+								(b.e.diagnosis?.ms ?? Infinity),
+			);
+		return rows;
+	}, [all, fav, country, protocol, subId, availability, query, sort]);
+	const end = Math.min(limit, Math.max(80, Math.ceil(rows.length / 80) * 80));
 	const act = async (f: () => Promise<unknown>) => {
 		try {
 			await f();
@@ -660,6 +695,7 @@ export function Servers({ ru }: Props) {
 	}
 	return (
 		<>
+			{prompt}
 			<section>
 				<label>
 					{t("Поиск", "Search")}
@@ -731,7 +767,7 @@ export function Servers({ ru }: Props) {
 							"error-address",
 						].map((v) => (
 							<option key={v} value={v}>
-								{v || t("Все", "All")}
+								{labels[v] || t("Все", "All")}
 							</option>
 						))}
 					</select>
@@ -790,6 +826,33 @@ export function Servers({ ru }: Props) {
 				>
 					{busy ? t("Отменить", "Cancel") : t("Проверить TCP", "Test TCP")}
 				</button>
+				<button
+					disabled={!checked.size}
+					onClick={() =>
+						act(async () => {
+							if (
+								!(await ask(
+									t(
+										"Экспортировать выбранные конфигурации без шифрования?",
+										"Export selected configurations without encryption?",
+									),
+								))
+							)
+								return;
+							await download(
+								"ploom-config.txt",
+								JSON.stringify({
+									format: "ploom-configs-v1",
+									configs: all
+										.filter(({ e }) => checked.has(e.id))
+										.map(({ e }) => e.raw),
+								}),
+							);
+						})
+					}
+				>
+					{t("Экспорт выбранных", "Export selected")} ({checked.size})
+				</button>
 				<output>{msg}</output>
 			</section>
 			{!all.length && (
@@ -797,9 +860,22 @@ export function Servers({ ru }: Props) {
 					<h2>{t("Список серверов пуст", "No servers yet")}</h2>
 				</section>
 			)}
-			{rows.slice(0, limit).map(({ e, sub }) => (
+			{rows.slice(end - 80, end).map(({ e, sub }) => (
 				<section key={e.id}>
 					<h2>{e.alias || e.name}</h2>
+					<label>
+						{t("Включить в экспорт", "Include in export")}
+						<input
+							type="checkbox"
+							checked={checked.has(e.id)}
+							onChange={() => {
+								const ids = new Set(checked);
+								if (ids.has(e.id)) ids.delete(e.id);
+								else ids.add(e.id);
+								mark(ids);
+							}}
+						/>
+					</label>
 					<p>
 						{sub.name} · {e.protocol} · {e.host}:{e.port}
 					</p>
@@ -809,7 +885,7 @@ export function Servers({ ru }: Props) {
 					<p>
 						{e.diagnosis?.ms != null
 							? "TCP " + e.diagnosis.ms + " ms"
-							: (e.diagnosis?.result ?? t("Не проверен", "Untested"))}
+							: (labels[e.diagnosis?.result ?? "unknown"] ?? labels.error)}
 					</p>
 					<button
 						aria-pressed={data.selected === e.id}
@@ -837,6 +913,32 @@ export function Servers({ ru }: Props) {
 					</button>
 					<details>
 						<summary>{t("Сведения", "Details")}</summary>
+						<button
+							onClick={() => act(() => probe([{ sub, e }]))}
+							disabled={!isTauri() || busy}
+						>
+							{t("Проверить этот сервер", "Test this server")}
+						</button>
+						<button
+							disabled={sub.entries[0]?.id === e.id}
+							onClick={() =>
+								act(() =>
+									change((d) => {
+										const entries = d.subscriptions.find(
+											(s) => s.id === sub.id,
+										)?.entries;
+										if (!entries) return;
+										const idx = entries.findIndex((x) => x.id === e.id);
+										if (idx > 0) {
+											entries.splice(idx - 1, 0, ...entries.splice(idx, 1));
+											entries.forEach((entry, index) => (entry.rank = index));
+										}
+									}),
+								)
+							}
+						>
+							{t("Выше в подписке", "Move up in subscription")}
+						</button>
 						<label>
 							{t("Своё название", "Custom name")}
 							<input
@@ -855,7 +957,7 @@ export function Servers({ ru }: Props) {
 							onClick={() =>
 								act(async () => {
 									if (
-										confirm(
+										await ask(
 											t(
 												"Скопировать секретную конфигурацию?",
 												"Copy confidential configuration?",
@@ -869,9 +971,9 @@ export function Servers({ ru }: Props) {
 							{t("Копировать", "Copy")}
 						</button>
 						<button
-							onClick={() => {
+							onClick={async () => {
 								if (
-									confirm(
+									await ask(
 										t(
 											"Сохранить незашифрованную конфигурацию?",
 											"Save an unencrypted configuration?",
@@ -941,8 +1043,11 @@ export function Servers({ ru }: Props) {
 					</details>
 				</section>
 			))}
-			{rows.length > limit && (
-				<button onClick={() => more(limit + 80)}>{t("Ещё", "More")}</button>
+			{end > 80 && (
+				<button onClick={() => more(end - 80)}>{t("Назад", "Previous")}</button>
+			)}
+			{rows.length > end && (
+				<button onClick={() => more(end + 80)}>{t("Ещё", "More")}</button>
 			)}
 		</>
 	);

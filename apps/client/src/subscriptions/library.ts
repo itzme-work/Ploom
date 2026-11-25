@@ -4,6 +4,7 @@ export type Entry = Server & {
 	alias?: string;
 	favorite?: boolean;
 	hidden?: boolean;
+	rank?: number;
 	added: number;
 	diagnosis?: { at: number; result: string; ms?: number };
 };
@@ -42,7 +43,7 @@ export function reconcile(old: Entry[], incoming: Server[]): Entry[] {
 		const k = endpoint(s);
 		counts.set(k, (counts.get(k) ?? 0) + 1);
 	}
-	return incoming.map((s) => {
+	const merged: Entry[] = incoming.map((s) => {
 		const k = endpoint(s),
 			prev = raw.get(s.raw) ?? (counts.get(k) === 1 ? matches.get(k) : null);
 		return {
@@ -50,6 +51,9 @@ export function reconcile(old: Entry[], incoming: Server[]): Entry[] {
 			...s,
 		};
 	});
+	return old.some((e) => e.rank !== undefined)
+		? merged.sort((a, b) => (a.rank ?? Infinity) - (b.rank ?? Infinity))
+		: merged;
 }
 export function usage(line: string) {
 	const out: Record<string, number> = {};

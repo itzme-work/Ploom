@@ -157,13 +157,14 @@ function boundedJson(s: string) {
 	}
 	return JSON.parse(s);
 }
-export function parseSubscription(text: string): Preview {
+export function parseSubscription(text: string, allowBundle = true): Preview {
 	if (new TextEncoder().encode(text).length > MAX_BYTES) throw Error("limit");
 	let body = text.trim(),
 		format = "URI",
 		invalid = 0,
 		duplicates = 0,
-		count = 0;
+		count = 0,
+		outputBytes = 0;
 	const servers: Server[] = [],
 		seen = new Set<string>();
 	function add(fn: () => Server) {
@@ -178,9 +179,12 @@ export function parseSubscription(text: string): Preview {
 				duplicates++;
 				return;
 			}
+			outputBytes += new TextEncoder().encode(s.raw).length;
+			if (outputBytes > MAX_BYTES * 2) throw Error("limit");
 			seen.add(identity);
 			servers.push(s);
-		} catch {
+		} catch (error) {
+			if (error instanceof Error && error.message === "limit") throw error;
 			invalid++;
 		}
 	}
@@ -198,7 +202,11 @@ export function parseSubscription(text: string): Preview {
 		for (const peer of peers)
 			add(() => {
 				const endpoint = peer.match(/^Endpoint\s*=\s*(\S+)\s*$/im)?.[1];
-				if (!endpoint || !/^PublicKey\s*=\s*\S+/im.test(peer)) throw Error();
+				if (
+					!endpoint ||
+					!/^PublicKey\s*=\s*[A-Za-z0-9+/]{43}=\s*$/im.test(peer)
+				)
+					throw Error();
 				const u = new URL("tcp://" + endpoint);
 				return server(
 					"wireguard",
@@ -234,18 +242,34 @@ export function parseSubscription(text: string): Preview {
 			});
 			root = doc.toJS({ maxAliasCount: 0 });
 		}
-		const r = obj(root),
-			rows = Array.isArray(root)
-				? root
-				: (r.proxies ??
-					(Array.isArray(r.outbounds) || Array.isArray(r.endpoints)
-						? [
-								...(Array.isArray(r.outbounds) ? r.outbounds : []),
-								...(Array.isArray(r.endpoints) ? r.endpoints : []),
-							]
-						: r.protocol || r.type
-							? [r]
-							: undefined));
+		const r = obj(root);
+		if (r.format === "ploom-configs-v1") {
+			if (!allowBundle) throw Error("format");
+			if (!Array.isArray(r.configs) || r.configs.length > MAX_ROWS)
+				throw Error("format");
+			for (const item of r.configs) {
+				if (typeof item !== "string" || item.includes("ploom-configs-v1"))
+					throw Error("format");
+				const parsed = parseSubscription(item, false);
+				if (parsed.servers.length !== 1 || parsed.invalid) {
+					invalid++;
+					continue;
+				}
+				add(() => parsed.servers[0]);
+			}
+			return { format: "Ploom", servers, invalid, duplicates };
+		}
+		const rows = Array.isArray(root)
+			? root
+			: (r.proxies ??
+				(Array.isArray(r.outbounds) || Array.isArray(r.endpoints)
+					? [
+							...(Array.isArray(r.outbounds) ? r.outbounds : []),
+							...(Array.isArray(r.endpoints) ? r.endpoints : []),
+						]
+					: r.protocol || r.type
+						? [r]
+						: undefined));
 		if (!Array.isArray(rows) || rows.length > MAX_ROWS) throw Error("format");
 		format = r.proxies
 			? "Clash/Mihomo"
