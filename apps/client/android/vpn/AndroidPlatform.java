@@ -10,7 +10,8 @@ import java.util.*;
 final class AndroidPlatform implements PlatformInterface {
     final PloomVpnService service;
     final ConnectivityManager manager;
-    private ConnectivityManager.NetworkCallback callback;
+    private volatile ConnectivityManager.NetworkCallback callback;
+    private android.os.HandlerThread monitorThread;
     private ParcelFileDescriptor tun;
 
     AndroidPlatform(PloomVpnService service) {
@@ -47,38 +48,72 @@ final class AndroidPlatform implements PlatformInterface {
         return c != null && c.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
                 && c.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
     }
-    private void update(InterfaceUpdateListener listener) {
+    private Network initialNetwork() {
         Network best = manager.getActiveNetwork();
         if (best == null || !usable(best)) {
             best = null;
             for (Network n : manager.getAllNetworks()) if (usable(n)) { best = n; break; }
         }
-        LinkProperties lp = best == null ? null : manager.getLinkProperties(best);
+        return best;
+    }
+    private void update(InterfaceUpdateListener listener, Network best, LinkProperties lp) {
         String name = lp == null ? null : lp.getInterfaceName();
         try {
             java.net.NetworkInterface iface = name == null ? null : java.net.NetworkInterface.getByName(name);
             if (iface != null) {
                 service.setUnderlyingNetworks(new Network[]{best});
-                listener.updateDefaultInterface(name, iface.getIndex(), false, false);
+                NetworkCapabilities capabilities = manager.getNetworkCapabilities(best);
+                boolean metered = capabilities != null
+                        && !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED);
+                listener.updateDefaultInterface(name, iface.getIndex(), metered, false);
                 return;
             }
         } catch (java.net.SocketException ignored) {}
+        service.setUnderlyingNetworks(new Network[0]);
         listener.updateDefaultInterface("", -1, false, false);
     }
     public synchronized void startDefaultInterfaceMonitor(InterfaceUpdateListener listener) {
         closeDefaultInterfaceMonitor(null);
-        callback = new ConnectivityManager.NetworkCallback() {
-            public void onAvailable(Network network) { update(listener); }
-            public void onLost(Network network) { update(listener); }
-            public void onLinkPropertiesChanged(Network network, LinkProperties props) { update(listener); }
-        };
-        manager.registerNetworkCallback(new NetworkRequest.Builder()
+        NetworkRequest request = new NetworkRequest.Builder()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-                .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN).build(), callback);
-        update(listener);
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN).build();
+        boolean bestMatching = android.os.Build.VERSION.SDK_INT >= 31;
+        callback = new ConnectivityManager.NetworkCallback() {
+            private Network selected;
+            public void onAvailable(Network network) {
+                if (callback != this) return;
+                selected = bestMatching ? network : initialNetwork();
+            }
+            public void onLost(Network network) {
+                if (callback != this || !network.equals(selected)) return;
+                selected = bestMatching ? null : initialNetwork();
+                update(listener, selected, selected == null ? null : manager.getLinkProperties(selected));
+            }
+            public void onLinkPropertiesChanged(Network network, LinkProperties props) {
+                if (callback != this) return;
+                if (!bestMatching) selected = initialNetwork();
+                if (network.equals(selected)) update(listener, network, props);
+            }
+        };
+        Network initial = initialNetwork();
+        update(listener, initial, initial == null ? null : manager.getLinkProperties(initial));
+        if (bestMatching) {
+            monitorThread = new android.os.HandlerThread("ploom-network");
+            monitorThread.start();
+            manager.registerBestMatchingNetworkCallback(request, callback,
+                    new android.os.Handler(monitorThread.getLooper()));
+        } else {
+            manager.registerNetworkCallback(request, callback);
+        }
     }
     public synchronized void closeDefaultInterfaceMonitor(InterfaceUpdateListener listener) {
-        if (callback != null) { manager.unregisterNetworkCallback(callback); callback = null; }
+        ConnectivityManager.NetworkCallback registered = callback;
+        callback = null;
+        try {
+            if (registered != null) manager.unregisterNetworkCallback(registered);
+        } finally {
+            if (monitorThread != null) { monitorThread.quitSafely(); monitorThread = null; }
+        }
     }
     private static StringIterator strings(List<String> values) {
         Iterator<String> i = values.iterator();
