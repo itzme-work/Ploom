@@ -21,7 +21,7 @@ go install github.com/sagernet/gomobile/cmd/gomobile@v0.1.13
 go install github.com/sagernet/gomobile/cmd/gobind@v0.1.13
 go mod download
 go mod verify
-gomobile bind -target android/arm64 -androidapi 24 -javapkg=io.nekohasekai -libname=box \
+gomobile bind -target android/arm64,android/amd64 -androidapi 24 -javapkg=io.nekohasekai -libname=box \
   -trimpath -tags with_quic,with_wireguard,with_utls,with_gvisor,badlinkname,tfogo_checklinkname0 \
   -ldflags '-checklinkname=0 -X github.com/sagernet/sing-box/constant.Version=1.14.4' \
   -o "$dest/libbox.aar" ./experimental/libbox
