@@ -15,7 +15,7 @@ let nonce
 const publicHttp=()=>shell("printf 'HEAD / HTTP/1.0\\r\\nHost: github.com\\r\\n\\r\\n' | toybox nc -w 8 github.com 80").split('\n')[0]
 function currentNetworks(){
   const dump=shell('dumpsys','connectivity')
-  const current=dump.match(/Current Networks:([\s\S]*?)Status for known UIDs:/)
+  const current=dump.match(/Current Networks:([\s\S]*?)(?:Status for known UIDs:|Network Requests:)/)
   if(!current) throw Error('Cannot read current Android network records')
   return current[1]
 }

@@ -49,6 +49,13 @@ jobs:
           done
           python ../../scripts/select-vpn-apks.py src-tauri/gen/android/app/build/outputs/apk "$RUNNER_TEMP/deliver"
           python ../../scripts/check-arm64.py "$RUNNER_TEMP/deliver/Ploom-vpn-arm64-debug.apk"
+          analyzer="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
+          for apk in "$RUNNER_TEMP/deliver/"*.apk; do
+            minimum=$("$analyzer" manifest min-sdk "$apk")
+            target=$("$analyzer" manifest target-sdk "$apk")
+            echo "$(basename "$apk") minSdk=$minimum targetSdk=$target" >> "$GITHUB_STEP_SUMMARY"
+            test "$minimum" -eq 24
+          done
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: libbox-arm64-source-and-library
@@ -56,6 +63,11 @@ jobs:
           retention-days: 7
           if-no-files-found: error
   android-vpn:
+    name: Installed Android API ${{ matrix.sdk }}
+    strategy:
+      fail-fast: false
+      matrix:
+        sdk: ['28', '30', '33', '35', '36', '37.0']
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -79,7 +91,7 @@ jobs:
       - run: sudo chmod a+rw /dev/kvm
       - uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
+          api-level: ${{ matrix.sdk }}
           target: google_apis
           arch: x86_64
           script: bash scripts/engine-lab/android-installed.sh

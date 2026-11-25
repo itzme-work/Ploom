@@ -55,6 +55,7 @@
   },
   "bundle": {
     "active": true,
+    "android": {"minSdkVersion": 24},
     "targets": [
       "nsis"
     ],
