@@ -7,16 +7,14 @@
 package wintun
 
 import (
+	"crypto/sha256"
 	"fmt"
- "crypto/sha256"
- "io"
- "os"
- "path/filepath"
+	"io"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"unsafe"
-
-
 
 	"golang.org/x/sys/windows"
 )
@@ -68,10 +66,9 @@ func (p *lazyProc) Load() error {
 }
 
 type lazyDLL struct {
-	Name   string
-	Base   windows.Handle
-	mu     sync.Mutex
-
+	Name string
+	Base windows.Handle
+	mu   sync.Mutex
 }
 
 func newLazyDLL(name string) *lazyDLL {
@@ -80,24 +77,34 @@ func newLazyDLL(name string) *lazyDLL {
 
 func (d *lazyDLL) Load() error {
 	d.mu.Lock()
-    defer d.mu.Unlock()
-    if d.Base != 0 { return nil }
-    executable, err := os.Executable()
-    if err != nil { return err }
-    path := filepath.Join(filepath.Dir(executable), "wintun.dll")
-    filename, err := windows.UTF16PtrFromString(path)
-    if err != nil { return err }
-    handle, err := windows.CreateFile(filename, windows.GENERIC_READ, windows.FILE_SHARE_READ, nil, windows.OPEN_EXISTING, windows.FILE_ATTRIBUTE_NORMAL, 0)
-    if err != nil { return err }
-    file := os.NewFile(uintptr(handle), path)
-    defer file.Close()
-    digest := sha256.New()
-    if _, err := io.Copy(digest, file); err != nil { return err }
-    if fmt.Sprintf("%x", digest.Sum(nil)) != "e5da8447dc2c320edc0fc52fa01885c103de8c118481f683643cacc3220dafce" {
-        return fmt.Errorf("unexpected Wintun DLL digest")
-    }
-    d.Base, err = windows.LoadLibraryEx(path, 0, windows.LOAD_LIBRARY_SEARCH_SYSTEM32)
-    return err
+	defer d.mu.Unlock()
+	if d.Base != 0 {
+		return nil
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(filepath.Dir(executable), "wintun.dll")
+	filename, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return err
+	}
+	handle, err := windows.CreateFile(filename, windows.GENERIC_READ, windows.FILE_SHARE_READ, nil, windows.OPEN_EXISTING, windows.FILE_ATTRIBUTE_NORMAL, 0)
+	if err != nil {
+		return err
+	}
+	file := os.NewFile(uintptr(handle), path)
+	defer file.Close()
+	digest := sha256.New()
+	if _, err := io.Copy(digest, file); err != nil {
+		return err
+	}
+	if fmt.Sprintf("%x", digest.Sum(nil)) != "e5da8447dc2c320edc0fc52fa01885c103de8c118481f683643cacc3220dafce" {
+		return fmt.Errorf("unexpected Wintun DLL digest")
+	}
+	d.Base, err = windows.LoadLibraryEx(path, 0, windows.LOAD_LIBRARY_SEARCH_SYSTEM32)
+	return err
 }
 
 func (p *lazyProc) nameToAddr() (uintptr, error) {
