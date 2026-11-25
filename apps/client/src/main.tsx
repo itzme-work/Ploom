@@ -1,5 +1,5 @@
 import { useConfirmation } from "./subscriptions/confirm";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
 	House,
@@ -10,6 +10,7 @@ import {
 	Power,
 } from "lucide-react";
 import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import semver from "semver";
 import { choices, useSettings } from "./store";
 import { checkRelease, current } from "./releases";
@@ -76,6 +77,38 @@ function App() {
 			clearInterval(id);
 		};
 	}, [android, windows]);
+	const connectFromTray = useRef(() => {});
+	useEffect(() => {
+		connectFromTray.current = () => {
+			if (
+				!requesting &&
+				selectedServer &&
+				(tunnel === "idle" || tunnel === "error")
+			)
+				void toggleTunnel();
+		};
+	});
+	useEffect(() => {
+		if (!windows) return;
+		void invoke("tray_preferences", {
+			minimize: p.minimizeToTray === "On",
+			background: p.backgroundSubscriptions === "On",
+			russian: ru,
+		}).catch(() => {
+			if (p.minimizeToTray === "On" || p.backgroundSubscriptions === "On")
+				msg(t("Системный трей недоступен.", "System tray unavailable."));
+		});
+	}, [windows, ru, p.minimizeToTray, p.backgroundSubscriptions]);
+	useEffect(() => {
+		if (!windows) return;
+		const listener = listen("ploom-connect-selected", () =>
+			connectFromTray.current(),
+		);
+		return () => {
+			void listener.then((stop) => stop());
+		};
+	}, [windows]);
+
 	async function toggleTunnel() {
 		if (
 			(!android && !windows) ||
@@ -193,6 +226,8 @@ function App() {
 		"Набор звуков",
 		"Канал",
 		"Автопроверка",
+		"Сворачивать в трей при закрытии",
+		"Обновлять подписки в фоне",
 	];
 	const values: Record<string, string> = {
 		System: "Системный",
@@ -541,10 +576,18 @@ function App() {
 				) : (
 					<>
 						<section>
-							{(Object.keys(choices) as (keyof typeof choices)[]).map(
-								(k, i) => (
+							{(Object.keys(choices) as (keyof typeof choices)[]).map((k, i) =>
+								!windows &&
+								(k === "minimizeToTray" ||
+									k === "backgroundSubscriptions") ? null : (
 									<label key={k}>
-										{ru ? labels[i] : k}
+										{ru
+											? labels[i]
+											: k === "minimizeToTray"
+												? "Minimize to tray on close"
+												: k === "backgroundSubscriptions"
+													? "Refresh subscriptions in background"
+													: k}
 										<select
 											disabled={k === "channel" && busy}
 											value={p[k]}

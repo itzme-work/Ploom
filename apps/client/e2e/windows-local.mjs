@@ -63,6 +63,10 @@ try {
   if(!browser)throw Error('Missing WebView2')
   const ctx=browser.contexts()[0],page=ctx.pages()[0]??await ctx.waitForEvent('page')
   page.setDefaultTimeout(20000)
+  if(process.argv[3]==='tray'){
+    await page.getByRole('button',{name:'Settings',exact:true}).click()
+    await page.getByLabel('Minimize to tray on close',{exact:true}).selectOption('On')
+  }
   await page.getByRole('button',{name:'Subscriptions',exact:true}).click()
   await page.getByLabel('Configurations',{exact:true}).fill(fixture?.uri ?? datagrams?.uri ?? 'http://'+host+':'+provider.address().port+'#fixture')
   await page.getByRole('button',{name:'Preview',exact:true}).click()
@@ -84,6 +88,11 @@ try {
   const heading=page.getByRole('heading',{name:/Local proxy.*127\.0\.0\.1/})
   await expect(heading).toBeVisible()
   const port=Number((await heading.innerText()).split(':').at(-1))
+  if(process.argv[3]==='tray'){
+    const cmd=`$p=Get-Process -Id ${app.pid}; if (!$p.CloseMainWindow()) { throw 'Close request failed' }`
+    await run('powershell.exe',['-NoProfile','-Command',cmd])
+    await expect.poll(async()=>Number((await run('powershell.exe',['-NoProfile','-Command',`(Get-Process -Id ${app.pid} -ErrorAction Stop).MainWindowHandle.ToInt64()`])).stdout.trim())).toBe(0)
+  }
   if(datagrams){
     await checkDatagrams(port)
   } else if(fixture){

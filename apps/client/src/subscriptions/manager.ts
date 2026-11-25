@@ -1,3 +1,5 @@
+import { listen } from "@tauri-apps/api/event";
+import { useSettings } from "../store";
 import LibraryWorker from "./worker.ts?worker&inline";
 import { create } from "zustand";
 import { invoke, isTauri } from "@tauri-apps/api/core";
@@ -124,7 +126,10 @@ export function startLibrary() {
 		running = false;
 	const attempted = new Map<string, number>();
 	async function tick(start = false) {
-		if (closed || running || document.hidden) return;
+		const background =
+			/Windows/.test(navigator.userAgent) &&
+			useSettings.getState().prefs.backgroundSubscriptions === "On";
+		if (closed || running || (document.hidden && !background)) return;
 		running = true;
 		try {
 			for (const s of useLibrary.getState().data.subscriptions) {
@@ -152,11 +157,15 @@ export function startLibrary() {
 		.then(() => tick(true))
 		.catch(() => useLibrary.setState({ error: true }));
 	const resume = () => void tick();
+	const tray = /Windows/.test(navigator.userAgent)
+		? listen("ploom-refresh-due", resume)
+		: undefined;
 	const timer = setInterval(resume, 60000);
 	document.addEventListener("visibilitychange", resume);
 	return () => {
 		closed = true;
 		clearInterval(timer);
+		void tray?.then((stop) => stop());
 		document.removeEventListener("visibilitychange", resume);
 	};
 }

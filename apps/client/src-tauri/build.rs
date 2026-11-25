@@ -12,6 +12,7 @@ fn main() {
         "tunnel_start",
         "tunnel_probe",
         "proxy_probe",
+        "tray_preferences",
         "proxy_start",
         "proxy_stop",
         "proxy_state",

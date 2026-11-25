@@ -7,6 +7,8 @@ mod subscriptions;
 #[cfg(windows)]
 mod system_proxy;
 #[cfg(windows)]
+mod tray;
+#[cfg(windows)]
 mod windows;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -50,6 +52,7 @@ pub fn run() {
     let builder = builder
         .invoke_handler(tauri::generate_handler![
             subscriptions::library_site,
+            tray::tray_preferences,
             windows::library_export,
             proxy_windows::proxy_probe,
             proxy_windows::proxy_start,
@@ -61,6 +64,13 @@ pub fn run() {
             subscriptions::subscription_dns,
             subscriptions::subscription_probe
         ])
+        .setup(|app| {
+            if tray::setup(app).is_err() {
+                eprintln!("System tray unavailable");
+            }
+            Ok(())
+        })
+        .on_window_event(tray::handle_close)
         .plugin(tauri_plugin_updater::Builder::new().build());
     builder
         .run(tauri::generate_context!())

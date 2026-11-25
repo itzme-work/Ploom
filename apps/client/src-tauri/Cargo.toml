@@ -16,6 +16,7 @@ serde_json = "1"
 tauri = { version = "2", features = [] }
 
 [target.'cfg(windows)'.dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
 semver = "1"
 sha2 = "0.10"
 winreg = "0.56"
