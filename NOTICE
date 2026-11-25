@@ -9,3 +9,8 @@ LICENSES/Apache-2.0.txt). Third-party files retain their upstream notices.
 sing-box 1.14.4, Copyright (C) 2022 by nekohasekai
 <contact-sagernet@sekai.icu>. See LICENSES/sing-box-1.14.4.txt, including
 the upstream naming notice. Ploom is an independent project.
+
+Windows component: Wintun 0.14.1, Copyright WireGuard LLC. The prebuilt
+amd64 DLL has SHA-256 e5da8447dc2c320edc0fc52fa01885c103de8c118481f683643cacc3220dafce.
+Its original prebuilt-binary license is in LICENSES/Wintun-0.14.1.txt.
+The Go bindings and the prebuilt driver have separate licensing terms.
