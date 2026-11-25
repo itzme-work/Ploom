@@ -23,7 +23,7 @@ go mod download
 go mod verify
 gomobile bind -target android/arm64,android/amd64 -androidapi 24 -javapkg=io.nekohasekai -libname=box \
   -trimpath -tags with_quic,with_wireguard,with_utls,with_gvisor,badlinkname,tfogo_checklinkname0 \
-  -ldflags '-checklinkname=0 -X github.com/sagernet/sing-box/constant.Version=1.14.4' \
+  -ldflags '-extldflags=-Wl,-z,max-page-size=16384 -checklinkname=0 -X github.com/sagernet/sing-box/constant.Version=1.14.4' \
   -o "$dest/libbox.aar" ./experimental/libbox
 unzip -p "$dest/libbox.aar" jni/arm64-v8a/libbox.so > "$work/libbox.so"
 test -s "$work/libbox.so"

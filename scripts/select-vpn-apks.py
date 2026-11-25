@@ -17,7 +17,7 @@ for apk in source.rglob("*debug.apk"):
     if len(groups) != 1:
         continue
     abi, libraries = next(iter(groups.items()))
-    if abi not in names or "libbox.so" not in libraries or len(libraries) < 2:
+    if abi not in names or not {"libbox.so", "libploom_lib.so"} <= libraries:
         continue
     if abi in selected:
         sys.exit(f"Multiple candidate packages for {abi}")
