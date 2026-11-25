@@ -10,6 +10,8 @@ fn main() {
         "scan_qr",
         "library_export",
         "tunnel_start",
+        "tunnel_probe",
+        "proxy_probe",
         "proxy_start",
         "proxy_stop",
         "proxy_state",

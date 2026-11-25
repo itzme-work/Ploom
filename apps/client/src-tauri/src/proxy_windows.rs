@@ -159,3 +159,34 @@ pub fn proxy_state() -> Result<serde_json::Value, String> {
         serde_json::json!({"state":if option_env!("PLOOM_CORE_SHA256").is_some() {"idle"} else {"unavailable"}}),
     )
 }
+
+#[tauri::command]
+pub async fn proxy_probe() -> Result<u64, String> {
+    let port = {
+        let mut slot = SESSION.lock().map_err(|_| "state")?;
+        let session = slot.as_mut().ok_or("offline")?;
+        if session.child.try_wait().map_err(|_| "state")?.is_some() {
+            return Err("offline".into());
+        }
+        session.port
+    };
+    let client = subscription_http::Client::builder()
+        .proxy(
+            subscription_http::Proxy::all(format!("http://127.0.0.1:{port}"))
+                .map_err(|_| "proxy")?,
+        )
+        .redirect(subscription_http::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(8))
+        .build()
+        .map_err(|_| "client")?;
+    let start = std::time::Instant::now();
+    let res = client
+        .get("https://connectivitycheck.gstatic.com/generate_204")
+        .send()
+        .await
+        .map_err(|e| if e.is_timeout() { "timeout" } else { "network" })?;
+    if res.status().as_u16() != 204 {
+        return Err("response".into());
+    }
+    Ok(start.elapsed().as_millis() as u64)
+}

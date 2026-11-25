@@ -117,3 +117,13 @@ pub async fn clear_traffic(app: tauri::AppHandle) -> Result<(), String> {
         .await
         .map_err(|_| "statistics".into())
 }
+
+#[tauri::command]
+pub async fn tunnel_probe(app: tauri::AppHandle) -> Result<u64, String> {
+    let result: serde_json::Value = app
+        .state::<PluginHandle<tauri::Wry>>()
+        .run_mobile_plugin_async("tunnelProbe", serde_json::json!({}))
+        .await
+        .map_err(|_| "network")?;
+    result["ms"].as_u64().ok_or_else(|| "response".into())
+}

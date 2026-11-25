@@ -46,6 +46,11 @@ function App() {
 	const [traffic, setTraffic] = useState<number[]>();
 	const [proxyPort, setProxyPort] = useState<number>();
 	const windows = isTauri() && /Windows/.test(navigator.userAgent);
+	const [probeBusy, setProbeBusy] = useState(false);
+	const [probeMs, setProbeMs] = useState<number>();
+	useEffect(() => {
+		setProbeMs(undefined);
+	}, [tunnel, proxyPort]);
 	const [requesting, request] = useState(false);
 	useEffect(() => {
 		if (!android && !windows) return;
@@ -388,6 +393,51 @@ function App() {
 										{usage(selectedSub.traffic).remaining}
 									</p>
 								)}
+							{["local-process", "tunnel-open"].includes(tunnel) && (
+								<div>
+									<button
+										disabled={probeBusy}
+										onClick={async () => {
+											if (
+												!(await confirmLan(
+													t(
+														"Проверить HTTPS через выбранный сервер? Google получит IP выхода.",
+														"Test HTTPS through this connection? Google will receive the exit IP.",
+													),
+												))
+											)
+												return;
+											setProbeBusy(true);
+											setProbeMs(undefined);
+											try {
+												setProbeMs(
+													await invoke<number>(
+														android ? "tunnel_probe" : "proxy_probe",
+													),
+												);
+												msg("");
+											} catch {
+												msg(
+													t(
+														"Контрольный HTTPS-запрос не прошёл.",
+														"HTTPS connection check failed.",
+													),
+												);
+											} finally {
+												setProbeBusy(false);
+											}
+										}}
+									>
+										{t("Проверить соединение", "Test connection")}
+									</button>
+									{probeMs !== undefined && (
+										<p>
+											{t("HTTPS через сервер", "HTTPS via provider")} ·{" "}
+											{probeMs} ms
+										</p>
+									)}
+								</div>
+							)}
 							{traffic && (
 								<dl>
 									<dt>

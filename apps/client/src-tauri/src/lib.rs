@@ -32,6 +32,7 @@ pub fn run() {
             subscriptions::library_site,
             android::traffic_summary,
             android::clear_traffic,
+            android::tunnel_probe,
             android::scan_qr,
             android::library_export,
             android::tunnel_start,
@@ -50,6 +51,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             subscriptions::library_site,
             windows::library_export,
+            proxy_windows::proxy_probe,
             proxy_windows::proxy_start,
             proxy_windows::proxy_stop,
             proxy_windows::proxy_state,

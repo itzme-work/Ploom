@@ -1,5 +1,8 @@
 name: Android libbox ARM64
 on: [push, pull_request, workflow_dispatch]
+concurrency:
+  group: connection-native-${{ github.workflow }}-${{ github.event_name }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -132,6 +135,8 @@ jobs:
           $installer = (Get-ChildItem src-tauri/target/debug/bundle/nsis/*.exe).FullName
           $proc = Start-Process $installer -ArgumentList "/S /D=$dir" -Wait -PassThru
           if ($proc.ExitCode) { throw 'NSIS install failed' }
+          node e2e/windows-tun.mjs "$dir/engine/sing-box.exe"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           node e2e/windows-local.mjs "$dir/ploom.exe"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

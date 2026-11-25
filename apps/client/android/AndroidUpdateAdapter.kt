@@ -69,6 +69,26 @@ class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
         host.getSharedPreferences("ploom.traffic",android.content.Context.MODE_PRIVATE).edit().clear().apply()
         invoke.resolve()
     }
+    @Command
+    fun tunnelProbe(invoke: Invoke){
+        Thread {
+            var http:HttpsURLConnection?=null
+            try {
+                val cm=host.getSystemService(android.net.ConnectivityManager::class.java)
+                val net=cm.activeNetwork ?: error("offline")
+                require(cm.getNetworkCapabilities(net)?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN)==true)
+                val service=Class.forName(vpnClass)
+                require(service.getField("state").get(null)=="tunnel-open")
+                val start=android.os.SystemClock.elapsedRealtime()
+                http=net.openConnection(URL("https://connectivitycheck.gstatic.com/generate_204")) as HttpsURLConnection
+                http.instanceFollowRedirects=false
+                http.connectTimeout=8000;http.readTimeout=8000;http.useCaches=false
+                require(http.responseCode==204 && cm.activeNetwork==net && service.getField("state").get(null)=="tunnel-open")
+                val result=app.tauri.plugin.JSObject()
+                result.put("ms",android.os.SystemClock.elapsedRealtime()-start);invoke.resolve(result)
+            } catch(_:Exception){invoke.reject("network")} finally{http?.disconnect()}
+        }.start()
+    }
     private val vpnClass = "work.itzme.ploom.PloomVpnService"
     @Command
     fun tunnelState(invoke: Invoke) {

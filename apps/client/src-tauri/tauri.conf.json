@@ -35,7 +35,7 @@
             "allow-library-export","allow-library-site"
           ]
         },
-        {"identifier":"windows-proxy","platforms":["windows"],"windows":["main"],"permissions":["allow-proxy-start","allow-proxy-stop","allow-proxy-state"]},
+        {"identifier":"windows-proxy","platforms":["windows"],"windows":["main"],"permissions":["allow-proxy-probe","allow-proxy-start","allow-proxy-stop","allow-proxy-state"]},
         {
           "identifier": "android-download",
           "platforms": [
@@ -46,7 +46,7 @@
           ],
           "permissions": [
             "allow-cancel-download",
-            "allow-traffic-summary","allow-clear-traffic","allow-scan-qr","allow-tunnel-start", "allow-tunnel-stop", "allow-tunnel-state",
+            "allow-traffic-summary","allow-clear-traffic","allow-scan-qr","allow-tunnel-probe","allow-tunnel-start", "allow-tunnel-stop", "allow-tunnel-state",
             "allow-open-update-browser"
           ]
         }
