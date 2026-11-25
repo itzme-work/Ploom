@@ -36,3 +36,12 @@ it('retains previous data after a network error or partial feed',async()=>{
  await expect(refresh(sub)).rejects.toThrow()
  expect(useLibrary.getState().data).toEqual(before)
 })
+it('retains the snapshot and updates its check timestamp on HTTP 304',async()=>{
+ sub.etag='"fixture"'
+ request.mockResolvedValue({unchanged:true})
+ await refresh(sub)
+ expect(request).toHaveBeenCalledWith('subscription_fetch',{url:sub.url,etag:sub.etag,modified:undefined})
+ const current=useLibrary.getState().data.subscriptions[0]
+ expect(current.entries).toEqual(sub.entries)
+ expect(current.updated).toBeGreaterThan(sub.updated)
+})

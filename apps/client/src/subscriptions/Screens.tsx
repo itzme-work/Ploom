@@ -305,6 +305,8 @@ export function Subscriptions({
 												enabled: true,
 												interval: 0,
 												updated: Date.now(),
+												etag: feed?.etag,
+												modified: feed?.modified,
 												traffic: feed?.traffic ?? "",
 												site: feed?.site ?? "",
 											});
@@ -468,6 +470,8 @@ export function Subscriptions({
 													)
 														throw Error("duplicate");
 													await update(s.id, (x) => {
+														delete x.etag;
+														delete x.modified;
 														x.url = v;
 													});
 												});
@@ -1034,10 +1038,11 @@ export function Servers({ ru }: Props) {
 								}}
 							/>
 						</label>
-<label>
+						<label>
 							{t("Личная заметка", "Personal note")}
 							<input
-								maxLength={2048} defaultValue={e.note ?? ""}
+								maxLength={2048}
+								defaultValue={e.note ?? ""}
 								onBlur={(ev) => {
 									const value = ev.target.value;
 									void act(() =>

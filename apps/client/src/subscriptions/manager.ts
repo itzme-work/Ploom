@@ -61,6 +61,8 @@ export function parse(text: string): Promise<Preview> {
 	});
 }
 export type Feed = {
+	etag?: string;
+	modified?: string;
 	text: string;
 	traffic: string;
 	site: string;
@@ -74,14 +76,29 @@ export async function refresh(s: Subscription) {
 	if (active.has(s.id) || !s.url || !s.enabled) return;
 	active.add(s.id);
 	try {
-		const feed = await fetchFeed(s.url),
-			preview = await parse(feed.text);
+		const feed = await invoke<Feed | { unchanged: true }>(
+			"subscription_fetch",
+			{ url: s.url, etag: s.etag, modified: s.modified },
+		);
+		if ("unchanged" in feed) {
+			if (!s.etag && !s.modified) throw Error("http");
+			await change((data) => {
+				const current = data.subscriptions.find(
+					(x) => x.id === s.id && x.enabled && x.url === s.url,
+				);
+				if (current) current.updated = Date.now();
+			});
+			return;
+		}
+		const preview = await parse(feed.text);
 		if (!preview.servers.length || preview.invalid) throw Error("format");
 		await change((data) => {
 			const sub = data.subscriptions.find((x) => x.id === s.id);
 			if (!sub || !sub.enabled || sub.url !== s.url) return;
 			Object.assign(sub, {
 				entries: reconcile(sub.entries, preview.servers),
+				etag: feed.etag,
+				modified: feed.modified,
 				traffic: feed.traffic,
 				site: feed.site,
 				updated: Date.now(),

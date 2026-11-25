@@ -17,6 +17,8 @@ export type Subscription = {
 	enabled: boolean;
 	interval: number;
 	updated: number;
+	etag?: string;
+	modified?: string;
 	traffic: string;
 	site: string;
 };
@@ -39,9 +41,7 @@ export function reconcile(old: Entry[], incoming: Server[]): Entry[] {
 			return entry;
 		});
 	// Match a changed record only when its endpoint is unique on both sides.
-	for (const signature of [
-		(s: Server) => [s.protocol, s.host, s.port],
-	]) {
+	for (const signature of [(s: Server) => [s.protocol, s.host, s.port]]) {
 		const choices = new Map<string, Entry | null>(),
 			counts = new Map<string, number>();
 		for (const e of old) {
