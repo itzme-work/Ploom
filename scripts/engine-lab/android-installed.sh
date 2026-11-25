@@ -21,3 +21,5 @@ adb install packages/Ploom-vpn-emulator.apk
 timeout --kill-after=5s 180s node apps/client/e2e/android-vpn.mjs
 adb shell pm clear work.itzme.ploom
 PLOOM_SS_TEST_CORE="$RUNNER_TEMP/sing-box" timeout --kill-after=5s 180s node apps/client/e2e/android-vpn.mjs
+adb shell pm clear work.itzme.ploom
+PLOOM_REALITY_TEST_CORE="$RUNNER_TEMP/sing-box" timeout --kill-after=5s 180s node apps/client/e2e/android-vpn.mjs

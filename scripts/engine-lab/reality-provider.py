@@ -12,7 +12,7 @@ from pathlib import Path
 from protocols import HOST, echo, engine, port
 
 
-async def main(binary, provider_host, directory):
+async def main(binary, provider_host, directory, emulator=False):
     cert, key = directory / "cert.pem", directory / "key.pem"
     subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
                     "-subj", "/CN=fixture.invalid", "-keyout", key, "-out", cert],
@@ -42,8 +42,14 @@ async def main(binary, provider_host, directory):
                    "server_name": "fixture.invalid", "reality": {"enabled": True,
                    "handshake": {"server": HOST, "server_port": handshake.sockets[0].getsockname()[1]},
                    "private_key": keys["PrivateKey"], "short_id": [sid]}}}
-        async with engine(binary, directory, "reality-provider", inbound, {"type": "direct"}):
-            uri = (f"vless://{uid}@{provider_host}:{endpoint}?security=reality&sni=fixture.invalid"
+        target_port = http.sockets[0].getsockname()[1]
+        destination = "192.0.2.90" if emulator else HOST
+        rule = {"ip_cidr": [destination + "/32"], "port": [target_port],
+                "action": "route", "outbound": "fixture", "override_address": HOST}
+        route = {"rules": [rule, {"action": "reject"}]}
+        async with engine(binary, directory, "reality-provider", inbound, {"type": "direct", "tag": "fixture"}, route):
+            client_host = "10.0.2.2" if emulator else provider_host
+            uri = (f"vless://{uid}@{client_host}:{endpoint}?security=reality&sni=fixture.invalid"
                    f"&fp=chrome&pbk={keys['PublicKey']}&sid={sid}&flow={flow}#Reality-fixture")
             print(json.dumps({"uri": uri, "port": http.sockets[0].getsockname()[1], "token": token}), flush=True)
             await asyncio.to_thread(sys.stdin.buffer.read, 1)
@@ -51,4 +57,4 @@ async def main(binary, provider_host, directory):
 
 if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as tmp:
-        asyncio.run(main(Path(sys.argv[1]).resolve(), sys.argv[2], Path(tmp)))
+        asyncio.run(main(Path(sys.argv[1]).resolve(), sys.argv[2], Path(tmp), "--emulator" in sys.argv[3:]))

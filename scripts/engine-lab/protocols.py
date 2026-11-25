@@ -22,9 +22,12 @@ def port():
 
 
 @asynccontextmanager
-async def engine(binary, directory, name, inbound, outbound):
+async def engine(binary, directory, name, inbound, outbound, route=None):
     file = directory / (name + ".json")
-    file.write_text(json.dumps({"log": {"disabled": True}, "inbounds": [inbound], "outbounds": [outbound]}))
+    config = {"log": {"disabled": True}, "inbounds": [inbound], "outbounds": [outbound]}
+    if route is not None:
+        config["route"] = route
+    file.write_text(json.dumps(config))
     proc = await asyncio.create_subprocess_exec(binary, "run", "-c", file,
                                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:

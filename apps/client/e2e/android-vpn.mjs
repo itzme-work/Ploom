@@ -1,6 +1,8 @@
 // Installed Android 15 emulator APK. This fixture only accepts CONNECT to one synthetic destination.
 import { _android as android, expect } from '@playwright/test'
-import { execFile, execFileSync } from 'node:child_process'
+import { createInterface } from "node:readline"
+import { fileURLToPath } from "node:url"
+import { execFile, execFileSync, spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { startShadowsocks } from './windows-datagrams.mjs'
 import { createSocket } from 'node:dgram'
@@ -69,21 +71,30 @@ async function exchangeDns({server,target}){
   const [reply]=await Promise.all([run('adb',['shell',command],{timeout:10000}),receiver])
   expect(reply.stdout.replace(/\s/g,'')).toBe(answer)
 }
-let device
+let device, reality, realityProcess
 try {
+  if(process.env.PLOOM_REALITY_TEST_CORE){
+    const script=fileURLToPath(new URL('../../../scripts/engine-lab/reality-provider.py',import.meta.url))
+    realityProcess=spawn('python3',[script,process.env.PLOOM_REALITY_TEST_CORE,'127.0.0.1','--emulator'],{stdio:['pipe','pipe','inherit']})
+    const lines=createInterface({input:realityProcess.stdout})
+    const first=await lines[Symbol.asyncIterator]().next()
+    if(first.done)throw Error('REALITY provider did not start')
+    reality=JSON.parse(first.value)
+    lines.close()
+  }
   shell('am','start','-W','-n',pkg+'/.MainActivity')
   ;[device]=await android.devices()
   const page=await (await device.webView({pkg},{timeout:60000})).page()
   page.setDefaultTimeout(20000)
   await page.getByRole('button',{name:'Subscriptions',exact:true}).click()
-  await page.getByLabel('Configurations',{exact:true}).fill(shadowsocks?.uri ?? 'http://10.0.2.2:18483#Android-fixture')
+  await page.getByLabel('Configurations',{exact:true}).fill(reality?.uri ?? shadowsocks?.uri ?? 'http://10.0.2.2:18483#Android-fixture')
   await page.getByRole('button',{name:'Preview',exact:true}).click()
   await page.getByRole('button',{name:'Import (1)',exact:true}).click()
   await page.getByRole('button',{name:'Servers',exact:true}).click()
   await page.getByRole('button',{name:'Select',exact:true}).click()
   await expect(page.getByRole('button',{name:'Select',exact:true})).toHaveAttribute('aria-pressed','true')
   await page.getByRole('button',{name:'Home',exact:true}).click()
-  await expect(page.getByText(shadowsocks?/fixture · (ss|shadowsocks)/i:/fixture · http/i)).toBeVisible()
+  await expect(page.getByText(reality?/fixture · vless/i:shadowsocks?/fixture · (ss|shadowsocks)/i:/fixture · http/i)).toBeVisible()
   const initialTunnels=tunnels()
   expect(publicHttp()).toMatch(/^HTTP\/1\.[01] [23]\d\d/)
   for(let session=1;session<=2;session++){
@@ -117,7 +128,12 @@ try {
     shell('input','keyevent','KEYCODE_HOME')
     // The server runs on this event loop, so the adb request must remain asynchronous.
     expect(tunnels().some(name=>!initialTunnels.includes(name))).toBe(true)
-    if(shadowsocks){
+    if(reality){
+      const request=`printf 'GET /${reality.token} HTTP/1.0\\r\\nHost: fixture.invalid\\r\\n\\r\\n' | toybox nc -w 8 192.0.2.90 ${reality.port}`
+      const {stdout}=await run('adb',['shell',request],{timeout:12000})
+      expect(stdout.split(/\r?\n\r?\n/).at(-1)).toBe(reality.token)
+      console.log('Installed Android VPN passed VLESS REALITY/Vision challenge.')
+    }else if(shadowsocks){
       for(const fixture of answers) await exchangeDns(fixture)
       console.log('Android VpnService relayed verified IPv4 and IPv6 DNS datagrams over Shadowsocks.')
     }else{
@@ -164,6 +180,7 @@ try {
   }
 } finally {
   if(device) await device.close()
+  realityProcess?.stdin.end()
   provider.close()
   shadowsocks?.close()
   for(const {server} of answers)server.close()
