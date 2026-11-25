@@ -40,7 +40,7 @@ async def engine(binary, directory, name, inbound, outbound):
             if proc.returncode is not None:
                 raise RuntimeError(f"{name}: engine startup failed")
             try:
-                _, writer = await asyncio.open_connection(HOST, inbound["listen_port"])
+                _, writer = await asyncio.open_connection(inbound["listen"], inbound["listen_port"])
                 writer.close()
                 await writer.wait_closed()
                 break

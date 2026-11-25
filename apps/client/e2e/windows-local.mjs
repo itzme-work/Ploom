@@ -1,5 +1,8 @@
 // Exercise the installed NSIS package, its real child process and its job lifetime.
 import { startShadowsocks, checkDatagrams } from './windows-datagrams.mjs'
+import { createInterface } from 'node:readline'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
 import { chromium } from 'playwright'
 import { expect } from '@playwright/test'
 import { spawn, execFile } from 'node:child_process'
@@ -40,6 +43,16 @@ const systemSettings=async()=>JSON.parse((await run("powershell.exe",["-NoProfil
 const baseline=system?await systemSettings():null
 const exe=process.argv[2]
 const datagrams=process.argv[3]==='datagrams'?await startShadowsocks(exe,host):null
+let reality, fixture
+if(process.argv[3]==='reality'){
+  const script=fileURLToPath(new URL('../../../scripts/engine-lab/reality-provider.py',import.meta.url))
+  reality=spawn('python',[script,join(dirname(exe),'engine','sing-box.exe'),host],{stdio:['pipe','pipe','inherit']})
+  const lines=createInterface({input:reality.stdout})
+  const first=await lines[Symbol.asyncIterator]().next()
+  if(first.done)throw Error('REALITY provider did not start')
+  fixture=JSON.parse(first.value)
+  lines.close()
+}
 const app=spawn(exe,[],{env:{...process.env,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:'--remote-debugging-port=19222 --remote-debugging-address=127.0.0.1'}})
 let browser
 try {
@@ -51,14 +64,14 @@ try {
   const ctx=browser.contexts()[0],page=ctx.pages()[0]??await ctx.waitForEvent('page')
   page.setDefaultTimeout(20000)
   await page.getByRole('button',{name:'Subscriptions',exact:true}).click()
-  await page.getByLabel('Configurations',{exact:true}).fill(datagrams?.uri ?? 'http://'+host+':'+provider.address().port+'#fixture')
+  await page.getByLabel('Configurations',{exact:true}).fill(fixture?.uri ?? datagrams?.uri ?? 'http://'+host+':'+provider.address().port+'#fixture')
   await page.getByRole('button',{name:'Preview',exact:true}).click()
   await page.getByRole('button',{name:'Import (1)',exact:true}).click()
   await page.getByRole('button',{name:'Servers',exact:true}).click()
   await page.getByRole('button',{name:'Select',exact:true}).click()
   await expect(page.getByRole('button',{name:'Select',exact:true})).toHaveAttribute('aria-pressed','true')
   await page.getByRole('button',{name:'Home',exact:true}).click()
-  await expect(page.getByText(datagrams?/fixture · (ss|shadowsocks)/i:/fixture · http/i)).toBeVisible()
+  await expect(page.getByText(fixture?/fixture · vless/i:datagrams?/fixture · (ss|shadowsocks)/i:/fixture · http/i)).toBeVisible()
   if(system)await page.getByRole('combobox',{name:'Windows mode'}).selectOption('system')
   await page.getByRole('button',{name:'Connect',exact:true}).click()
   const confirm=page.getByRole('button',{name:'Confirm',exact:true})
@@ -73,6 +86,10 @@ try {
   const port=Number((await heading.innerText()).split(':').at(-1))
   if(datagrams){
     await checkDatagrams(port)
+  } else if(fixture){
+    const reply=await run('curl.exe',['--silent','--fail','--socks5','127.0.0.1:'+port,
+      '--noproxy','','--max-time','10','http://127.0.0.1:'+fixture.port+'/'+fixture.token])
+    expect(reply.stdout).toBe(fixture.token)
   } else {
   const {stdout}=await run('curl.exe',['--silent','--show-error','--fail','--socks5','127.0.0.1:'+port,
     '--noproxy','','--max-time','8','http://192.0.2.90:18081/'+token])
@@ -97,6 +114,6 @@ try {
   })).toBe(false)
   if(system)await expect.poll(systemSettings,{timeout:10000}).toEqual(baseline)
 } finally {
-  app.kill();datagrams?.close();provider.close()
+  app.kill();reality?.stdin.end();datagrams?.close();provider.close()
   if(browser)await browser.close().catch(()=>{})
 }
