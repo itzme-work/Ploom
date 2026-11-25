@@ -96,6 +96,8 @@ jobs:
           tar xzf sing-box-1.14.4-linux-amd64.tar.gz --strip-components=1 sing-box-1.14.4-linux-amd64/sing-box
       - run: sudo chmod a+rw /dev/kvm
       - uses: reactivecircus/android-emulator-runner@v2
+        env:
+          PLOOM_EXPECTED_API: ${{ matrix.sdk }}
         with:
           api-level: ${{ matrix.sdk }}
           target: google_apis

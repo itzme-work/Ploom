@@ -11,6 +11,12 @@ report_failure() {
     return "$result"
 }
 trap report_failure EXIT
+api=$(adb shell getprop ro.build.version.sdk | tr -d '\r')
+test "$api" = "${PLOOM_EXPECTED_API%%.*}"
+if [[ "$api" == 36 ]]; then
+    adb shell wm size 1920x1200
+    adb shell wm density 240
+fi
 adb install packages/Ploom-vpn-emulator.apk
 timeout --kill-after=5s 180s node apps/client/e2e/android-vpn.mjs
 adb shell pm clear work.itzme.ploom
