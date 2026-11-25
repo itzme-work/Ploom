@@ -27,12 +27,7 @@ public final class PloomVpnService extends VpnService implements CommandServerHa
         long sent=traffic.getUpload(),received=traffic.getDownload();
         long du=Math.max(0,sent-up),dd=Math.max(0,received-down);
         snapshot=new long[]{sent,received,du*1000/interval,dd*1000/interval,(now-started)/1000};
-        if(du+dd>0){
-            String day=new java.text.SimpleDateFormat("yyyy-MM-dd",java.util.Locale.ROOT).format(new java.util.Date());
-            android.content.SharedPreferences prefs=getSharedPreferences("ploom.traffic",MODE_PRIVATE);
-            prefs.edit().putLong(day+"/up",prefs.getLong(day+"/up",0)+du)
-                .putLong(day+"/down",prefs.getLong(day+"/down",0)+dd).apply();
-        }
+        if (du > 0 || dd > 0) TrafficStore.add(this, du, dd);
         up=sent;down=received;last=now;
     }
     private CommandServer server;

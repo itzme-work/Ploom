@@ -49,24 +49,13 @@ class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
     }
     @Command
     fun trafficSummary(invoke: Invoke){
-        val prefs=host.getSharedPreferences("ploom.traffic",android.content.Context.MODE_PRIVATE)
-        val sums=LongArray(6)
-        val day=java.util.Calendar.getInstance()
-        val format=java.text.SimpleDateFormat("yyyy-MM-dd",java.util.Locale.ROOT)
-        for(i in 0 until 30){
-            val key=format.format(day.time)
-            val up=prefs.getLong("$key/up",0);val down=prefs.getLong("$key/down",0)
-            if(i==0){sums[0]=up;sums[1]=down}
-            if(i<7){sums[2]+=up;sums[3]+=down}
-            sums[4]+=up;sums[5]+=down
-            day.add(java.util.Calendar.DATE,-1)
-        }
+        val sums=TrafficStore.summary(host)
         val reply=app.tauri.plugin.JSObject()
         reply.put("bytes",org.json.JSONArray(sums.toList()));invoke.resolve(reply)
     }
     @Command
     fun clearTraffic(invoke: Invoke){
-        host.getSharedPreferences("ploom.traffic",android.content.Context.MODE_PRIVATE).edit().clear().apply()
+        TrafficStore.clear(host)
         invoke.resolve()
     }
     @Command
