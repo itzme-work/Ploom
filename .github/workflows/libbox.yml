@@ -82,11 +82,7 @@ jobs:
           api-level: 35
           target: google_apis
           arch: x86_64
-          script: |
-            adb install packages/Ploom-vpn-emulator.apk
-            node apps/client/e2e/android-vpn.mjs
-            adb shell pm clear work.itzme.ploom
-            PLOOM_SS_TEST_CORE="$RUNNER_TEMP/sing-box" node apps/client/e2e/android-vpn.mjs
+          script: bash scripts/engine-lab/android-installed.sh
   windows-proxy:
     permissions: {contents: read, actions: read}
     runs-on: windows-2022

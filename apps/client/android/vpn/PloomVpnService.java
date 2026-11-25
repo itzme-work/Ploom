@@ -48,7 +48,13 @@ public final class PloomVpnService extends VpnService implements CommandServerHa
     }
     @Override public int onStartCommand(Intent intent,int flags,int id) {
         if (intent == null || !"start".equals(intent.getAction())) {
-            executor.execute(() -> { shutdown(); state="idle"; stopSelfResult(id); });
+            android.util.Log.i("PloomVpn", "Stop requested");
+            executor.execute(() -> {
+                shutdown();
+                state="idle";
+                stopSelfResult(id);
+                android.util.Log.i("PloomVpn", "Tunnel closed");
+            });
             return START_NOT_STICKY;
         }
         startForeground(NOTICE,notice());
@@ -77,6 +83,7 @@ public final class PloomVpnService extends VpnService implements CommandServerHa
     private void shutdown() {
         sample(); snapshot=null;
         if (server != null) {
+            android.util.Log.i("PloomVpn", "Closing libbox service");
             try { server.closeService(); } catch (Exception ignored) {}
             try { server.close(); } catch (Exception ignored) {}
             server=null;
@@ -87,6 +94,7 @@ public final class PloomVpnService extends VpnService implements CommandServerHa
     @Override public void onDestroy(){
         executor.execute(() -> { shutdown(); if (!state.equals("error") && !state.equals("revoked")) state="idle"; });
         executor.shutdown(); stopForeground(true); super.onDestroy();
+        android.util.Log.i("PloomVpn", "Service destroyed");
     }
     public int connectSSHAgent(){return -1;}
     public void serviceStop(){stopSelf();}
