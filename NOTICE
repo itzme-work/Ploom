@@ -1,0 +1,11 @@
+Ploom
+
+The combined Ploom distribution linked with sing-box/libbox is distributed
+under the GNU General Public License version 3 or (at your option) any later
+version. See LICENSES/GPL-3.0.txt. Existing Ploom source distributed under
+Apache License 2.0 retains that license and its notices (LICENSE and
+LICENSES/Apache-2.0.txt). Third-party files retain their upstream notices.
+
+sing-box 1.14.4, Copyright (C) 2022 by nekohasekai
+<contact-sagernet@sekai.icu>. See LICENSES/sing-box-1.14.4.txt, including
+the upstream naming notice. Ploom is an independent project.

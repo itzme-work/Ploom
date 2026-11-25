@@ -1,0 +1,28 @@
+name: Android libbox ARM64
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: {persist-credentials: false}
+      - uses: actions/setup-go@v5
+        with: {go-version: 1.26.10, cache: false}
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with: {distribution: temurin, java-version: 17}
+      - run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'ndk;27.2.12479018' 'platforms;android-36'
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
+          bash scripts/libbox/build.sh "$RUNNER_TEMP/deliver"
+          python3 scripts/libbox/sbom.py "$RUNNER_TEMP/deliver"
+          (cd apps/client && npm sbom --package-lock-only --omit=dev --sbom-format=cyclonedx) > "$RUNNER_TEMP/deliver/frontend.cdx.json"
+          git archive --format=tar.gz -o "$RUNNER_TEMP/deliver/ploom-source.tar.gz" HEAD
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: libbox-arm64-source-and-library
+          path: ${{ runner.temp }}/deliver
+          retention-days: 7
+          if-no-files-found: error
