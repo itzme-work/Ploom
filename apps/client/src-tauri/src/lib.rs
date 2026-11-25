@@ -5,9 +5,23 @@ mod connection;
 mod proxy_windows;
 mod subscriptions;
 #[cfg(windows)]
+mod system_proxy;
+#[cfg(windows)]
 mod windows;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(windows)]
+    {
+        if std::env::args_os().nth(1).as_deref()
+            == Some(std::ffi::OsStr::new("--system-proxy-guard"))
+        {
+            if system_proxy::guard().is_err() {
+                std::process::exit(1);
+            }
+            return;
+        }
+        system_proxy::recover();
+    }
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_clipboard_manager::init());

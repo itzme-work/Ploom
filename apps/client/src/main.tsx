@@ -34,6 +34,7 @@ function App() {
 	const [downloading, setDownloading] = useState(false);
 	const android = isTauri() && /Android/.test(navigator.userAgent);
 	const [tunnel, setTunnel] = useState("idle");
+	const [systemProxy,setSystemProxy]=useState(false);
 	const [proxyPort, setProxyPort] = useState<number>();
 	const windows = isTauri() && /Windows/.test(navigator.userAgent);
 	const [requesting, request] = useState(false);
@@ -84,7 +85,7 @@ function App() {
 				const command = android ? "tunnel_start" : "proxy_start";
 				const raw = selectedServer?.raw;
 				try {
-					await invoke(command, { raw });
+					await invoke(command, { raw,system:systemProxy });
 				} catch (error) {
 					const required = String(error);
 					if (!required.startsWith("lan:")) throw error;
@@ -99,7 +100,7 @@ function App() {
 								"?",
 						)
 					)
-						await invoke(command, { raw, lanEndpoint: endpoint });
+						await invoke(command, { raw, system:systemProxy, lanEndpoint: endpoint });
 				}
 			}
 			msg("");
@@ -280,6 +281,9 @@ function App() {
 				{page === 0 ? (
 					<>
 						<section className="hero">
+                            {windows && tunnel!=="unavailable" && <label>{t("Режим Windows","Windows mode")}<select value={systemProxy?"system":"local"} disabled={tunnel==="local-process" || requesting} onChange={event=>setSystemProxy(event.target.value==="system")}>
+                            <option value="local">Local Proxy</option><option value="system">System Proxy</option></select></label>}
+                            {windows && systemProxy && <p>{t("Некоторые приложения игнорируют системный прокси.","Some applications ignore the system proxy.")}</p>}
 							<button
 								className="power"
 								aria-label={

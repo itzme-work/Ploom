@@ -18,6 +18,7 @@ struct Session {
     child: Child,
     port: u16,
     _job: OwnedHandle,
+    system: Option<super::system_proxy::Guard>,
 }
 static SESSION: Mutex<Option<Session>> = Mutex::new(None);
 
@@ -48,14 +49,15 @@ pub async fn proxy_start(
     app: tauri::AppHandle,
     raw: String,
     lan_endpoint: Option<String>,
+    system: Option<bool>,
 ) -> Result<(), String> {
     let out = super::connection::outbound(&raw, lan_endpoint).await?;
-    tauri::async_runtime::spawn_blocking(move || start(&app, out))
+    tauri::async_runtime::spawn_blocking(move || start(&app, out, system.unwrap_or(false)))
         .await
         .map_err(|_| "worker")?
 }
 
-fn start(app: &tauri::AppHandle, out: serde_json::Value) -> Result<(), String> {
+fn start(app: &tauri::AppHandle, out: serde_json::Value, system: bool) -> Result<(), String> {
     let expected = option_env!("PLOOM_CORE_SHA256").ok_or("unavailable")?;
     let path = app
         .path()
@@ -105,7 +107,27 @@ fn start(app: &tauri::AppHandle, out: serde_json::Value) -> Result<(), String> {
         .write_all(config.to_string().as_bytes())
         .map_err(|_| "launch")?;
     drop(input);
+    let mut ready = false;
+    for _ in 0..80 {
+        if child.try_wait().map_err(|_| "state")?.is_some() {
+            return Err("launch".into());
+        }
+        if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+            ready = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    if !ready {
+        return Err("launch".into());
+    }
+    let system = if system {
+        Some(super::system_proxy::Guard::start(port).map_err(|_| "system proxy")?)
+    } else {
+        None
+    };
     *slot = Some(Session {
+        system,
         child,
         port,
         _job: owner,
@@ -126,7 +148,9 @@ pub fn proxy_state() -> Result<serde_json::Value, String> {
     let mut slot = SESSION.lock().map_err(|_| "state")?;
     if let Some(s) = slot.as_mut() {
         if s.child.try_wait().map_err(|_| "state")?.is_none() {
-            return Ok(serde_json::json!({"state":"local-process","port":s.port}));
+            return Ok(
+                serde_json::json!({"state":"local-process","system":s.system.is_some(),"port":s.port}),
+            );
         }
         *slot = None;
         return Ok(serde_json::json!({"state":"error"}));
