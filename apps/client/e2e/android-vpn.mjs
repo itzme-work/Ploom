@@ -1,4 +1,4 @@
-// Installed ARM64 APK. This fixture only accepts CONNECT to one synthetic destination.
+// Installed Android 15 emulator APK. This fixture only accepts CONNECT to one synthetic destination.
 import { _android as android, expect } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
@@ -66,9 +66,12 @@ try {
     {timeout:12000},(error,stdout)=>error?reject(error):resolve(stdout.trim())))
   expect(response).toBe('received-'+nonce)
   expect(traversals).toBe(1)
+  console.log('Background TCP challenge crossed the installed VpnService and controlled provider.')
   shell('am','start','-W','-n',pkg+'/.MainActivity')
   await page.getByRole('button',{name:'Disconnect',exact:true}).click()
-  await expect(page.getByText('Disconnected',{exact:true})).toBeVisible()
+  await expect(page.getByText('Disconnected',{exact:true})).toBeVisible({timeout:20000})
+  const networks=shell('dumpsys','connectivity')
+  expect(networks.split('\n').filter(line=>line.includes('NetworkAgentInfo') && line.includes('Transports: VPN') && line.includes('CONNECTED'))).toHaveLength(0)
 } finally {
   if(device) await device.close()
   provider.close()

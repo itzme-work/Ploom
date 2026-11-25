@@ -103,7 +103,9 @@ class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
     }
     @Command
     fun tunnelStop(invoke: Invoke) {
-        host.stopService(Intent().setClassName(host, vpnClass))
+        // Android can still hold a VpnService binding after stopService(). Close the
+        // engine and its TUN descriptor before asking Android to destroy the service.
+        host.startService(Intent().setClassName(host, vpnClass).setAction("stop"))
         invoke.resolve()
     }
     @Command
