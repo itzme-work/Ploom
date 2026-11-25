@@ -100,8 +100,17 @@ jobs:
           $checkout = New-Item -Type Directory "$env:RUNNER_TEMP/sing-box"
           tar xf $source -C $checkout.FullName --strip-components 1
           Push-Location $checkout
-          go build -trimpath -buildvcs=false -tags 'with_quic,with_wireguard,with_utls,with_gvisor,badlinkname,tfogo_checklinkname0' -ldflags '-checklinkname=0 -X github.com/sagernet/sing-box/constant.Version=1.14.4' -o "$engine/sing-box.exe" ./cmd/sing-box
+          $module = (go mod download -json github.com/sagernet/sing-tun@v0.9.7-0.20261023115432-040db71fcd33 | ConvertFrom-Json).Dir
+          if (!$module) { throw 'Missing pinned sing-tun module' }
+          $wintun = Join-Path $env:RUNNER_TEMP 'wintun.zip'
+          Invoke-WebRequest 'https://www.wintun.net/builds/wintun-0.14.1.zip' -OutFile $wintun
+          $overlay = Join-Path $env:RUNNER_TEMP 'wintun-overlay'
+          python "$env:GITHUB_WORKSPACE/scripts/windows-core/prepare.py" $module $wintun $overlay $engine.FullName
+          if ($LASTEXITCODE) { throw 'Wintun verification failed' }
+          go build -overlay "$overlay/overlay.json" -trimpath -buildvcs=false -tags 'with_quic,with_wireguard,with_utls,with_gvisor,badlinkname,tfogo_checklinkname0' -ldflags '-checklinkname=0 -X github.com/sagernet/sing-box/constant.Version=1.14.4' -o "$engine/sing-box.exe" ./cmd/sing-box
           if ($LASTEXITCODE) { throw 'Core build failed' }
+          python -c "import pathlib,sys; p=pathlib.Path(sys.argv[1]); sys.exit((p/'wintun.dll').read_bytes() in (p/'sing-box.exe').read_bytes())" $engine.FullName
+          if ($LASTEXITCODE) { throw 'Unexpected embedded Wintun binary' }
           go mod verify
           if ($LASTEXITCODE) { throw 'Go module verification failed' }
           go version -m "$engine/sing-box.exe" > "$env:RUNNER_TEMP/windows-core-buildinfo.txt"
