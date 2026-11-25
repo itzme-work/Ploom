@@ -49,7 +49,20 @@ async fn resolve(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
     }
     Ok(ips)
 }
-async fn download(raw: String) -> Result<serde_json::Value, String> {
+async fn client_for(host: String, port: u16) -> Result<Client, String> {
+    let ips = resolve(&host, port).await?;
+    Client::builder()
+        .no_proxy()
+        .redirect(Policy::none())
+        .resolve_to_addrs(&host, &ips)
+        .build()
+        .map_err(|_| "network".into())
+}
+async fn download<F, Fut>(raw: String, client_for: F) -> Result<serde_json::Value, String>
+where
+    F: Fn(String, u16) -> Fut,
+    Fut: std::future::Future<Output = Result<Client, String>>,
+{
     if raw.len() > 8192 {
         return Err("url".into());
     }
@@ -65,13 +78,7 @@ async fn download(raw: String) -> Result<serde_json::Value, String> {
             return Err("url".into());
         }
         let host = url.host_str().ok_or("url")?;
-        let ips = resolve(host, url.port_or_known_default().ok_or("url")?).await?;
-        let client = Client::builder()
-            .no_proxy()
-            .redirect(Policy::none())
-            .resolve_to_addrs(host, &ips)
-            .build()
-            .map_err(|_| "network")?;
+        let client = client_for(host.to_owned(), url.port_or_known_default().ok_or("url")?).await?;
         let mut resp = client
             .get(url.clone())
             .send()
@@ -122,7 +129,7 @@ async fn download(raw: String) -> Result<serde_json::Value, String> {
 #[tauri::command]
 pub async fn subscription_fetch(url: String) -> Result<serde_json::Value, String> {
     let _permit = REQUESTS.try_acquire().map_err(|_| "busy")?;
-    timeout(Duration::from_secs(25), download(url))
+    timeout(Duration::from_secs(25), download(url, client_for))
         .await
         .map_err(|_| "timeout")?
 }
@@ -158,5 +165,95 @@ mod tests {
             assert!(!public(s.parse().unwrap()))
         }
         assert!(public("1.1.1.1".parse().unwrap()))
+    }
+}
+
+#[cfg(test)]
+mod transport_tests {
+    use super::*;
+    use std::sync::Arc;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio_rustls::{
+        rustls::{self, pki_types::PrivatePkcs8KeyDer},
+        TlsAcceptor,
+    };
+    #[tokio::test]
+    async fn verifies_tls_limits_and_redirect_origin() {
+        let name = "subscription.example.invalid";
+        let cert = rcgen::generate_simple_self_signed(vec![name.to_owned()]).unwrap();
+        let der = cert.cert.der().clone();
+        let config = rustls::ServerConfig::builder_with_provider(Arc::new(
+            rustls::crypto::ring::default_provider(),
+        ))
+        .with_safe_default_protocol_versions()
+        .unwrap()
+        .with_no_client_auth()
+        .with_single_cert(
+            vec![der.clone()],
+            PrivatePkcs8KeyDer::from(cert.key_pair.serialize_der()).into(),
+        )
+        .unwrap();
+        let accept = TlsAcceptor::from(Arc::new(config));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let task = tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                let accept = accept.clone();
+                tokio::spawn(async move {
+                    let Ok(mut tls) = accept.accept(stream).await else {
+                        return;
+                    };
+                    let mut buf = [0; 2048];
+                    let Ok(n) = tls.read(&mut buf).await else {
+                        return;
+                    };
+                    let path = std::str::from_utf8(&buf[..n])
+                        .unwrap_or("")
+                        .split_whitespace()
+                        .nth(1)
+                        .unwrap_or("");
+                    let reply=match path{
+                "/redirect"=>"302 Found\r\nLocation: /feed\r\nContent-Length: 0\r\n\r\n",
+                "/cross"=>"302 Found\r\nLocation: https://other.invalid/secret\r\nContent-Length: 0\r\n\r\n",
+                "/large"=>"200 OK\r\nContent-Length: 4194305\r\n\r\n",
+                "/feed"=>"200 OK\r\nSubscription-Userinfo: total=128\r\nContent-Length: 2\r\n\r\nok",
+                _=>"503 Unavailable\r\nContent-Length: 0\r\n\r\n"
+              };
+                    let _ = tls.write_all(format!("HTTP/1.1 {reply}").as_bytes()).await;
+                    let _ = tls.shutdown().await;
+                });
+            }
+        });
+        let url = |path: &str| format!("https://{name}:{}{path}", addr.port());
+        for (path, trust, want) in [
+            ("/feed", false, "network"),
+            ("/cross", true, "url"),
+            ("/large", true, "size"),
+            ("/bad", true, "http"),
+            ("/redirect", true, "ok"),
+        ] {
+            let mut builder = Client::builder()
+                .no_proxy()
+                .redirect(Policy::none())
+                .resolve(name, addr);
+            if trust {
+                builder = builder
+                    .add_root_certificate(subscription_http::Certificate::from_der(&der).unwrap())
+            }
+            let client = builder.build().unwrap();
+            let result = download(url(path), |host, _| {
+                assert_eq!(host, name);
+                std::future::ready(Ok(client.clone()))
+            })
+            .await;
+            if want == "ok" {
+                let feed = result.unwrap();
+                assert_eq!(feed["text"], "ok");
+                assert_eq!(feed["traffic"], "total=128")
+            } else {
+                assert_eq!(result.unwrap_err(), want)
+            }
+        }
+        task.abort();
     }
 }
