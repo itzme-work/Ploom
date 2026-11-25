@@ -13,11 +13,14 @@ const pkg='work.itzme.ploom'
 const shell=(...args)=>execFileSync('adb',['shell',...args],{encoding:'utf8',timeout:20000}).trim()
 let nonce
 const publicHttp=()=>shell("printf 'HEAD / HTTP/1.0\\r\\nHost: github.com\\r\\n\\r\\n' | toybox nc -w 8 github.com 80").split('\n')[0]
-function tunnels(){
+function currentNetworks(){
   const dump=shell('dumpsys','connectivity')
   const current=dump.match(/Current Networks:([\s\S]*?)Status for known UIDs:/)
   if(!current) throw Error('Cannot read current Android network records')
-  return [...new Set(Array.from(current[1].matchAll(/InterfaceName:\s*(tun\d+)\b/g),m=>m[1]))].sort()
+  return current[1]
+}
+function tunnels(){
+  return [...new Set(Array.from(currentNetworks().matchAll(/InterfaceName:\s*(tun\d+)\b/g),m=>m[1]))].sort()
 }
 let traversals=0
 const provider=createServer(socket=>{
@@ -120,7 +123,7 @@ try {
         expect(traversals).toBe(expectedVisits)
       }
       await challenge(traversals+1)
-      if(session===1){
+      if(session===2){
         // Reopen UI only to read the physical transport libbox selected. Each
         // challenge still traverses the OS TUN, independently of this status.
         shell('am','start','-W','-n',pkg+'/.MainActivity')
@@ -128,8 +131,15 @@ try {
         await expect.poll(physical,{timeout:20000}).toBe('wifi')
         try{
           shell('svc','wifi','disable')
-          await expect.poll(physical,{timeout:30000}).toBe('cellular')
-          await challenge(traversals+1)
+          await expect.poll(physical,{timeout:30000}).not.toBe('wifi')
+          // Determine the available path independently of Ploom's report.
+          if (/Transports:\s*CELLULAR\b/.test(currentNetworks())){
+            await expect.poll(physical,{timeout:30000}).toBe('cellular')
+            await challenge(traversals+1)
+          }else{
+            await expect.poll(physical).toBe('offline')
+            console.log('Emulator has no cellular network; testing recovery from offline to Wi-Fi.')
+          }
         }finally{
           shell('svc','wifi','enable')
         }
@@ -144,6 +154,7 @@ try {
     await expect.poll(tunnels,{timeout:20000}).toEqual(initialTunnels)
     await expect.poll(()=>shell('dumpsys','activity','services',pkg).split('\n').some(line=>line.includes('ServiceRecord{') && line.includes('PloomVpnService')),{timeout:20000}).toBe(false)
     expect(publicHttp()).toMatch(/^HTTP\/1\.[01] [23]\d\d/)
+    console.log('Session',session,'closed: TUN and service removed; direct Internet request passed.')
   }
 } finally {
   if(device) await device.close()

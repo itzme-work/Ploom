@@ -581,14 +581,17 @@ function App() {
 								(k === "minimizeToTray" ||
 									k === "backgroundSubscriptions") ? null : (
 									<label key={k}>
-										{ru
-											? labels[i]
-											: k === "minimizeToTray"
-												? "Minimize to tray on close"
-												: k === "backgroundSubscriptions"
-													? "Refresh subscriptions in background"
-													: k}
+										<span id={`label-${k}`}>
+											{ru
+												? labels[i]
+												: k === "minimizeToTray"
+													? "Minimize to tray on close"
+													: k === "backgroundSubscriptions"
+														? "Refresh subscriptions in background"
+														: k}
+										</span>
 										<select
+											aria-labelledby={`label-${k}`}
 											disabled={k === "channel" && busy}
 											value={p[k]}
 											onChange={(e) => {
