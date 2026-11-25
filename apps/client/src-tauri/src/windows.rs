@@ -97,3 +97,104 @@ mod tests {
         assert!(require_signature("  ").is_err());
     }
 }
+
+#[tauri::command]
+pub fn library_key(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    use std::{
+        io::Write,
+        ptr::{null, null_mut},
+    };
+    use tauri::Manager;
+    use windows_sys::Win32::{Foundation::LocalFree, Security::Cryptography::*};
+    let fail = "Secure storage unavailable";
+    let dir = app.path().app_local_data_dir().map_err(|_| fail)?;
+    std::fs::create_dir_all(&dir).map_err(|_| fail)?;
+    let path = dir.join("library-key-v1.dpapi");
+    let transform = |bytes: &mut [u8], protect: bool| -> Result<Vec<u8>, String> {
+        let input = CRYPT_INTEGER_BLOB {
+            cbData: bytes.len() as u32,
+            pbData: bytes.as_mut_ptr(),
+        };
+        let mut out = CRYPT_INTEGER_BLOB {
+            cbData: 0,
+            pbData: null_mut(),
+        };
+        unsafe {
+            let status = if protect {
+                CryptProtectData(
+                    &input,
+                    null(),
+                    null(),
+                    null(),
+                    null(),
+                    CRYPTPROTECT_UI_FORBIDDEN,
+                    &mut out,
+                )
+            } else {
+                CryptUnprotectData(
+                    &input,
+                    null_mut(),
+                    null(),
+                    null(),
+                    null(),
+                    CRYPTPROTECT_UI_FORBIDDEN,
+                    &mut out,
+                )
+            };
+            if status == 0 {
+                return Err(fail.into());
+            }
+            let result = std::slice::from_raw_parts(out.pbData, out.cbData as usize).to_vec();
+            LocalFree(out.pbData.cast());
+            Ok(result)
+        }
+    };
+    if !path.exists() {
+        let mut secret = [0u8; 32];
+        if unsafe {
+            BCryptGenRandom(
+                null_mut(),
+                secret.as_mut_ptr(),
+                32,
+                BCRYPT_USE_SYSTEM_PREFERRED_RNG,
+            )
+        } != 0
+        {
+            return Err(fail.into());
+        }
+        let mut tmp = tempfile::NamedTempFile::new_in(dir).map_err(|_| fail)?;
+        tmp.write_all(&transform(&mut secret, true)?)
+            .map_err(|_| fail)?;
+        tmp.as_file().sync_all().map_err(|_| fail)?;
+        if let Err(e) = tmp.persist_noclobber(&path) {
+            if e.error.kind() != std::io::ErrorKind::AlreadyExists {
+                return Err(fail.into());
+            }
+        }
+    }
+    let bytes = transform(&mut std::fs::read(path).map_err(|_| fail)?, false)?;
+    Ok(serde_json::json!({"key":bytes.iter().map(|b|format!("{b:02x}")).collect::<String>()}))
+}
+
+#[tauri::command]
+pub async fn library_export(name: String, text: String) -> Result<(), String> {
+    if !super::valid_export(&name, &text) {
+        return Err("Invalid export".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        use std::io::Write;
+        let dest = rfd::FileDialog::new()
+            .set_file_name(&name)
+            .save_file()
+            .ok_or("Canceled")?;
+        let mut tmp = tempfile::NamedTempFile::new_in(dest.parent().ok_or("Invalid path")?)
+            .map_err(|_| "Export failed")?;
+        tmp.write_all(text.as_bytes())
+            .and_then(|_| tmp.as_file().sync_all())
+            .map_err(|_| "Export failed")?;
+        tmp.persist(dest).map_err(|_| "Export failed")?;
+        Ok(())
+    })
+    .await
+    .map_err(|_| "Export failed")?
+}

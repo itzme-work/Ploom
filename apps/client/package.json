@@ -1,6 +1,6 @@
 {
   "name": "ploom",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "",
   "main": "index.js",
   "directories": {
@@ -20,10 +20,14 @@
   "private": true,
   "dependencies": {
     "@tauri-apps/api": "^2.12.5",
+    "@tauri-apps/plugin-clipboard-manager": "^2.5.0",
+    "@tauri-apps/plugin-deep-link": "^2.6.3",
+    "jsqr": "^1.4.0",
     "lucide-react": "^1.78.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "semver": "^7.8.6",
+    "yaml": "^2.9.1",
     "zustand": "^5.1.0"
   },
   "devDependencies": {

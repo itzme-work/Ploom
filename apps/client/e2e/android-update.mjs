@@ -1,3 +1,4 @@
+import {libraryFixture} from './native-library.mjs'
 // Runs against the debug WebView on an API 35 emulator. Only the baseline is installed via adb.
 import { _android as android } from 'playwright'
 import { expect } from '@playwright/test'
@@ -34,6 +35,8 @@ async function installer(action){
 mode('good')
 launch()
 const page=await webview()
+await libraryFixture(page,true)
+shell('appops','set',pkg,'REQUEST_INSTALL_PACKAGES','allow')
 const desired={style:'ASCII',mode:'Dark',language:'English',accent:'Mint',scale:'115%',font:'Mono',effects:'Low',transparency:'Off',motion:'Off',sound:'On',volume:'50%',soundset:'Soft',channel:'Beta',automatic:'Off'}
 for(const [name,value] of Object.entries(desired)) await page.getByRole('combobox',{name,exact:true}).selectOption(value)
 await page.getByRole('button',{name:'Check for updates'}).click()
@@ -64,5 +67,6 @@ await expect(async()=>{
  await expect(upgraded.getByText('Ploom 0.1.3 · Beta',{exact:true})).toBeVisible()
 }).toPass({timeout:90000})
 for(const [name,value] of Object.entries(desired)) await expect(upgraded.getByRole('combobox',{name,exact:true})).toHaveValue(value)
+await libraryFixture(upgraded,false)
 console.log('Android system installer upgraded the app; all preferences survived.')
 process.exit(0)
