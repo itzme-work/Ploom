@@ -52,19 +52,24 @@ function App() {
 	useEffect(() => {
 		setProbeMs(undefined);
 	}, [tunnel, proxyPort]);
+	const [notificationMissing, setNotificationMissing] = useState(false);
 	const [requesting, request] = useState(false);
 	useEffect(() => {
 		if (!android && !windows) return;
 		let alive = true;
 		const poll = () =>
-			invoke<{ state: string; port?: number; traffic?: number[] }>(
-				android ? "tunnel_state" : "proxy_state",
-			)
-				.then(({ state, port, traffic }) => {
+			invoke<{
+				state: string;
+				port?: number;
+				traffic?: number[];
+				notificationPermissionMissing?: boolean;
+			}>(android ? "tunnel_state" : "proxy_state")
+				.then(({ state, port, traffic, notificationPermissionMissing }) => {
 					if (alive) {
 						setTunnel(state);
 						setProxyPort(port);
 						setTraffic(traffic);
+						setNotificationMissing(notificationPermissionMissing === true);
 					}
 				})
 				.catch(() => {
@@ -428,6 +433,33 @@ function App() {
 										{usage(selectedSub.traffic).remaining}
 									</p>
 								)}
+							{android && tunnel === "tunnel-open" && notificationMissing && (
+								<button
+									onClick={async () => {
+										try {
+											const { granted } = await invoke<{ granted: boolean }>(
+												"request_vpn_notification",
+											);
+											if (!granted)
+												msg(
+													t(
+														"Уведомления отключены. Доступ можно изменить в настройках Android.",
+														"Notifications are disabled. You can change access in Android settings.",
+													),
+												);
+										} catch {
+											msg(
+												t(
+													"Не удалось запросить уведомления.",
+													"Unable to request notifications.",
+												),
+											);
+										}
+									}}
+								>
+									{t("Разрешить уведомление VPN", "Allow VPN notification")}
+								</button>
+							)}
 							{["local-process", "tunnel-open"].includes(tunnel) && (
 								<div>
 									<button

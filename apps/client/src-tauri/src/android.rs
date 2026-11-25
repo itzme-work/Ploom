@@ -87,6 +87,13 @@ pub async fn tunnel_stop(app: tauri::AppHandle) -> Result<(), String> {
         .map_err(|_| "stop".into())
 }
 #[tauri::command]
+pub async fn request_vpn_notification(app: tauri::AppHandle) -> Result<serde_json::Value,String> {
+    app.state::<PluginHandle<tauri::Wry>>()
+        .run_mobile_plugin_async("requestVpnNotification", serde_json::json!({}))
+        .await.map_err(|_| "notification permission".into())
+}
+
+#[tauri::command]
 pub async fn tunnel_state(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     app.state::<PluginHandle<tauri::Wry>>()
         .run_mobile_plugin_async("tunnelState", serde_json::json!({}))

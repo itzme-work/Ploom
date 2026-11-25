@@ -39,6 +39,7 @@ pub fn run() {
             android::library_export,
             android::tunnel_start,
             android::tunnel_stop,
+            android::request_vpn_notification,
             android::tunnel_state,
             android::library_key,
             android::install_update,

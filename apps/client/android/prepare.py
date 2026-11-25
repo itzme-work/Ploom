@@ -56,7 +56,7 @@ if engine:
     dep = 'implementation(files("libs/libbox.aar"))'
     if dep not in gradle.read_text():
         gradle.write_text(gradle.read_text() + "\ndependencies { " + dep + " }\n")
-    for perm in ("FOREGROUND_SERVICE", "FOREGROUND_SERVICE_SYSTEM_EXEMPTED", "ACCESS_NETWORK_STATE"):
+    for perm in ("FOREGROUND_SERVICE", "FOREGROUND_SERVICE_SYSTEM_EXEMPTED", "ACCESS_NETWORK_STATE", "POST_NOTIFICATIONS"):
         name = "android.permission." + perm
         if not any(node.get(key("name")) == name for node in doc.findall("uses-permission")):
             ET.SubElement(doc, "uses-permission", {key("name"): name})

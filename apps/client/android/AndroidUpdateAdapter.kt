@@ -35,8 +35,23 @@ class InstallArgs { lateinit var expected: String; lateinit var progress: app.ta
 @InvokeArg
 class TunnelArgs { lateinit var config: String }
 
-@TauriPlugin
+@TauriPlugin(permissions = [app.tauri.annotation.Permission(alias = "vpnNotification", strings = ["android.permission.POST_NOTIFICATIONS"])])
 class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
+    private fun notificationPermissionMissing() = Build.VERSION.SDK_INT >= 33 &&
+        host.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+
+    @Command
+    fun requestVpnNotification(invoke: Invoke) {
+        if (notificationPermissionMissing()) requestPermissionForAlias("vpnNotification", invoke, "notificationResult")
+        else notificationResult(invoke)
+    }
+
+    @app.tauri.annotation.PermissionCallback
+    fun notificationResult(invoke: Invoke) {
+        val result = app.tauri.plugin.JSObject()
+        result.put("granted", !notificationPermissionMissing())
+        invoke.resolve(result)
+    }
     @Command
     fun scanQr(invoke: Invoke) {
         startActivityForResult(invoke,Intent(host,QrScannerActivity::class.java),"qrResult")
@@ -86,6 +101,7 @@ class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
             val service=Class.forName(vpnClass)
             result.put("state",service.getField("state").get(null))
             result.put("network",service.getField("networkType").get(null))
+            result.put("notificationPermissionMissing",notificationPermissionMissing())
             val usage=service.getMethod("metrics").invoke(null) as? LongArray
             if(usage!=null)result.put("traffic",org.json.JSONArray(usage.toList()))
         } catch (_: ClassNotFoundException) { result.put("state","unavailable") }

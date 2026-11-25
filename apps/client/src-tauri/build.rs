@@ -17,6 +17,7 @@ fn main() {
         "proxy_stop",
         "proxy_state",
         "tunnel_stop",
+        "request_vpn_notification",
         "tunnel_state",
         "library_site",
         "subscription_fetch",
