@@ -100,6 +100,16 @@ jobs:
           '{"bundle":{"resources":["engine/*"]}}' | Set-Content src-tauri/engine-config.json -Encoding utf8NoBOM
           npm run tauri -- build --debug --bundles nsis --config src-tauri/engine-config.json
           if ($LASTEXITCODE) { throw 'NSIS build failed' }
+      - name: Test installed Windows local proxy and process cleanup
+        working-directory: apps/client
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'ploom-core-test'
+          $installer = (Get-ChildItem src-tauri/target/debug/bundle/nsis/*.exe).FullName
+          $proc = Start-Process $installer -ArgumentList "/S /D=$dir" -Wait -PassThru
+          if ($proc.ExitCode) { throw 'NSIS install failed' }
+          node e2e/windows-local.mjs "$dir/ploom.exe"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: windows-x64-core-debug
