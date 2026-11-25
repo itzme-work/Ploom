@@ -1,3 +1,4 @@
+import { useConfirmation } from "./subscriptions/confirm";
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { House, Layers, Server, Settings, Power } from "lucide-react";
@@ -29,6 +30,7 @@ function App() {
 			p.language === "Русский" ||
 			(p.language === "System" && navigator.language.startsWith("ru")),
 		t = (a: string, b: string) => (ru ? a : b);
+	const { ask: confirmLan, prompt: lanPrompt } = useConfirmation(ru);
 	const [downloading, setDownloading] = useState(false);
 	const android = isTauri() && /Android/.test(navigator.userAgent);
 	const [tunnel, setTunnel] = useState("idle");
@@ -62,7 +64,8 @@ function App() {
 		if (
 			(!android && !windows) ||
 			tunnel === "unavailable" ||
-			(!selectedServer && tunnel !== "tunnel-open")
+			(!selectedServer &&
+				!["local-process", "starting", "tunnel-open"].includes(tunnel))
 		) {
 			msg(
 				t(
@@ -77,10 +80,28 @@ function App() {
 			if (tunnel === "local-process") await invoke("proxy_stop");
 			else if (tunnel === "tunnel-open" || tunnel === "starting")
 				await invoke("tunnel_stop");
-			else
-				await invoke(android ? "tunnel_start" : "proxy_start", {
-					raw: selectedServer?.raw,
-				});
+			else {
+				const command = android ? "tunnel_start" : "proxy_start";
+				const raw = selectedServer?.raw;
+				try {
+					await invoke(command, { raw });
+				} catch (error) {
+					const required = String(error);
+					if (!required.startsWith("lan:")) throw error;
+					const endpoint = required.slice(4);
+					if (
+						await confirmLan(
+							t(
+								"Разрешить это подключение к локальному серверу ",
+								"Allow this connection to the local server ",
+							) +
+								endpoint +
+								"?",
+						)
+					)
+						await invoke(command, { raw, lanEndpoint: endpoint });
+				}
+			}
 			msg("");
 		} catch (reason) {
 			const code = String(reason);
@@ -227,6 +248,7 @@ function App() {
 				} as React.CSSProperties
 			}
 		>
+			{lanPrompt}
 			<aside>
 				<header>
 					<img src={new URL("./logo.svg", import.meta.url).href} alt="" />

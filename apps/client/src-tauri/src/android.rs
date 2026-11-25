@@ -65,8 +65,12 @@ pub async fn library_export(
 }
 
 #[tauri::command]
-pub async fn tunnel_start(app: tauri::AppHandle, raw: String) -> Result<(), String> {
-    let config = super::connection::tun(super::connection::outbound(&raw).await?);
+pub async fn tunnel_start(
+    app: tauri::AppHandle,
+    raw: String,
+    lan_endpoint: Option<String>,
+) -> Result<(), String> {
+    let config = super::connection::tun(super::connection::outbound(&raw, lan_endpoint).await?);
     app.state::<PluginHandle<tauri::Wry>>()
         .run_mobile_plugin_async(
             "tunnelStart",

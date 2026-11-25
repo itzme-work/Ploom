@@ -18,6 +18,8 @@ jobs:
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
           bash scripts/libbox/build.sh "$RUNNER_TEMP/deliver"
           python3 scripts/libbox/sbom.py "$RUNNER_TEMP/deliver"
+          python3 scripts/libbox/notices.py "$RUNNER_TEMP/deliver"
+          cp -r LICENSES "$RUNNER_TEMP/deliver/"
           (cd apps/client && npm sbom --package-lock-only --omit=dev --sbom-format=cyclonedx) > "$RUNNER_TEMP/deliver/frontend.cdx.json"
           git archive --format=tar.gz -o "$RUNNER_TEMP/deliver/ploom-source.tar.gz" HEAD
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -41,6 +43,28 @@ jobs:
           path: ${{ runner.temp }}/deliver
           retention-days: 7
           if-no-files-found: error
+  android-vpn:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: {persist-credentials: false}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with: {name: libbox-arm64-source-and-library, path: packages}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - run: npm ci
+        working-directory: apps/client
+      - run: sudo chmod a+rw /dev/kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: google_apis
+          arch: x86_64
+          script: |
+            adb install packages/Ploom-vpn-arm64-debug.apk
+            node apps/client/e2e/android-vpn.mjs
   windows-proxy:
     runs-on: windows-2022
     timeout-minutes: 45

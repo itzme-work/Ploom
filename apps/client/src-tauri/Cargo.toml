@@ -52,3 +52,6 @@ version="2"
 
 [dependencies.percent-encoding]
 version="2"
+
+[dependencies.uuid]
+version="1"

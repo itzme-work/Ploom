@@ -44,8 +44,12 @@ fn job() -> Result<OwnedHandle, String> {
 }
 
 #[tauri::command]
-pub async fn proxy_start(app: tauri::AppHandle, raw: String) -> Result<(), String> {
-    let out = super::connection::outbound(&raw).await?;
+pub async fn proxy_start(
+    app: tauri::AppHandle,
+    raw: String,
+    lan_endpoint: Option<String>,
+) -> Result<(), String> {
+    let out = super::connection::outbound(&raw, lan_endpoint).await?;
     tauri::async_runtime::spawn_blocking(move || start(&app, out))
         .await
         .map_err(|_| "worker")?
