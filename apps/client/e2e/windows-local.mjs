@@ -31,7 +31,8 @@ const provider=createServer(s=>{
   })
 })
 await new Promise(resolve=>provider.listen(0,host,resolve))
-const system=process.argv[3]==="system"
+const coreCrash=process.argv[3]==="core-crash"
+const system=coreCrash || process.argv[3]==="system"
 const systemSettings=async()=>JSON.parse((await run("powershell.exe",["-NoProfile","-Command",
   "$v=Get-ItemProperty 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings'; ConvertTo-Json -Compress -InputObject @($v.ProxyEnable,$v.ProxyServer)"
 ])).stdout)
@@ -76,7 +77,13 @@ try {
     expect((await run('powershell.exe',['-NoProfile','-Command',cmd],{timeout:15000})).stdout.trim()).toBe(token)
     expect(visits).toBe(2)
   }
-  app.kill()
+  if(coreCrash){
+    const cdp=await ctx.newCDPSession(page)
+    await cdp.send('Page.setWebLifecycleState',{state:'frozen'})
+    const stopCore=`$cores=@(Get-CimInstance Win32_Process -Filter "Name='sing-box.exe' AND ParentProcessId=${app.pid}"); if ($cores.Count -ne 1) { throw 'Expected exactly one Ploom core' }; Stop-Process -Id $cores[0].ProcessId -Force -ErrorAction Stop`
+    await run('powershell.exe',['-NoProfile','-Command',stopCore])
+    expect(app.exitCode).toBeNull()
+  }else app.kill()
   await expect.poll(()=>new Promise(resolve=>{
     const s=connect(port,'127.0.0.1',()=>{s.destroy();resolve(true)})
     s.on('error',()=>resolve(false))

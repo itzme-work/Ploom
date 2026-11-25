@@ -3215,6 +3215,7 @@ dependencies = [
 name = "ploom"
 version = "0.3.0"
 dependencies = [
+ "base64 0.22.1",
  "percent-encoding",
  "rcgen",
  "reqwest 0.12.28",

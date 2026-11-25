@@ -5,7 +5,7 @@ use std::{
     net::TcpListener,
     os::windows::{
         fs::OpenOptionsExt,
-        io::{AsRawHandle, FromRawHandle, OwnedHandle},
+        io::{AsHandle, AsRawHandle, FromRawHandle, OwnedHandle},
         process::CommandExt,
     },
     process::{Child, Command, Stdio},
@@ -126,6 +126,30 @@ fn start(app: &tauri::AppHandle, out: serde_json::Value, system: bool) -> Result
     } else {
         None
     };
+    if system.is_some() {
+        // A suspended WebView cannot poll proxy_state. Keep a kernel handle so
+        // cleanup follows this exact core process even if the user closes its tab.
+        let handle = child
+            .as_handle()
+            .try_clone_to_owned()
+            .map_err(|_| "supervisor")?;
+        let pid = child.id();
+        std::thread::Builder::new()
+            .name("ploom-core-exit".into())
+            .spawn(move || {
+                use windows_sys::Win32::System::Threading::{WaitForSingleObject, INFINITE};
+                if unsafe { WaitForSingleObject(handle.as_raw_handle(), INFINITE) } == 0 {
+                    if let Ok(mut slot) = SESSION.lock() {
+                        if let Some(session) =
+                            slot.as_mut().filter(|session| session.child.id() == pid)
+                        {
+                            drop(session.system.take());
+                        }
+                    }
+                }
+            })
+            .map_err(|_| "supervisor")?;
+    }
     *slot = Some(Session {
         system,
         child,

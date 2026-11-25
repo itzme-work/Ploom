@@ -62,6 +62,7 @@ fn configuration(u: &Url) -> Result<Value, String> {
     let kind = match u.scheme() {
         "http" | "https" => "http",
         "socks5" => "socks",
+        "ss" => "shadowsocks",
         "hy2" | "hysteria2" => "hysteria2",
         "trojan" => "trojan",
         "tuic" => "tuic",
@@ -71,6 +72,34 @@ fn configuration(u: &Url) -> Result<Value, String> {
     };
     let mut out = json!({"type":kind,"tag":"provider"});
     match kind {
+        "shadowsocks" => {
+            use base64::{
+                engine::general_purpose::{URL_SAFE, URL_SAFE_NO_PAD},
+                Engine,
+            };
+            let (method, password) = if let Some(password) = pass {
+                (user, password)
+            } else {
+                let bytes = URL_SAFE_NO_PAD
+                    .decode(&user)
+                    .or_else(|_| URL_SAFE.decode(&user))
+                    .map_err(|_| "credentials")?;
+                let value = String::from_utf8(bytes).map_err(|_| "credentials")?;
+                let (method, password) = value.split_once(':').ok_or("credentials")?;
+                (method.to_owned(), password.to_owned())
+            };
+            if !matches!(
+                method.as_str(),
+                "aes-128-gcm" | "aes-256-gcm" | "chacha20-ietf-poly1305"
+            ) {
+                return Err("options".into());
+            }
+            if password.is_empty() || password.chars().any(char::is_control) {
+                return Err("credentials".into());
+            }
+            out["method"] = json!(method);
+            out["password"] = json!(password);
+        }
         "socks" | "http" => {
             if !user.is_empty() || pass.is_some() {
                 out["username"] = json!(user);
@@ -168,6 +197,14 @@ fn configuration(u: &Url) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn shadowsocks_sip002_preserves_password_and_rejects_unhandled_plugins() {
+        let uri = "ss://YWVzLTI1Ni1nY206YTpi@example.invalid:443";
+        let out = configuration(&Url::parse(uri).unwrap()).unwrap();
+        assert_eq!(out["method"], "aes-256-gcm");
+        assert_eq!(out["password"], "a:b");
+        assert!(configuration(&Url::parse(&format!("{uri}?plugin=unsupported")).unwrap()).is_err());
+    }
     #[test]
     fn preserves_reality_identity_and_rejects_unknown_security_options() {
         let base="vless://00000000-0000-4000-8000-000000000001@fixture.invalid:443?security=reality&pbk=fixture&sid=01&sni=fixture.invalid&fp=chrome&flow=xtls-rprx-vision";
