@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 concurrency:
   group: connection-native-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 permissions:
   contents: read
 jobs:
@@ -115,7 +115,7 @@ jobs:
           if ($LASTEXITCODE) { throw 'Go module verification failed' }
           go version -m "$engine/sing-box.exe" > "$env:RUNNER_TEMP/windows-core-buildinfo.txt"
           Pop-Location
-          Copy-Item LICENSES/GPL-3.0.txt,LICENSES/sing-box-1.14.4.txt,LICENSES/Apache-2.0.txt,LICENSES/Wintun-0.14.1.txt,NOTICE $engine
+          Copy-Item LICENSES/GPL-3.0.txt,LICENSES/sing-box-1.14.4.txt,LICENSES/Apache-2.0.txt,LICENSES/Wintun-0.14.1.txt,LICENSES/Wintun-Go-MIT.txt,NOTICE $engine
           $env:PLOOM_CORE_SHA256 = (Get-FileHash "$engine/sing-box.exe").Hash.ToLowerInvariant()
           Set-Location apps/client
           npm ci

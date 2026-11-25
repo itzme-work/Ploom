@@ -13,4 +13,5 @@ the upstream naming notice. Ploom is an independent project.
 Windows component: Wintun 0.14.1, Copyright WireGuard LLC. The prebuilt
 amd64 DLL has SHA-256 e5da8447dc2c320edc0fc52fa01885c103de8c118481f683643cacc3220dafce.
 Its original prebuilt-binary license is in LICENSES/Wintun-0.14.1.txt.
-The Go bindings and the prebuilt driver have separate licensing terms.
+Ploom adapts the MIT-licensed Go loader from sing-tun to open the external
+DLL by its verified absolute path. See LICENSES/Wintun-Go-MIT.txt.
