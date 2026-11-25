@@ -32,6 +32,7 @@ try {
   shell('am','start','-W','-n',pkg+'/.MainActivity')
   ;[device]=await android.devices()
   const page=await (await device.webView({pkg},{timeout:60000})).page()
+  page.setDefaultTimeout(20000)
   await page.getByRole('button',{name:'Subscriptions',exact:true}).click()
   await page.getByLabel('Configurations',{exact:true}).fill('http://10.0.2.2:18483#Android-fixture')
   await page.getByRole('button',{name:'Preview',exact:true}).click()

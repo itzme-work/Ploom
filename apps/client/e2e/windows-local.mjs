@@ -49,6 +49,7 @@ try {
   }
   if(!browser)throw Error('Missing WebView2')
   const ctx=browser.contexts()[0],page=ctx.pages()[0]??await ctx.waitForEvent('page')
+  page.setDefaultTimeout(20000)
   await page.getByRole('button',{name:'Subscriptions',exact:true}).click()
   await page.getByLabel('Configurations',{exact:true}).fill(datagrams?.uri ?? 'http://'+host+':'+provider.address().port+'#fixture')
   await page.getByRole('button',{name:'Preview',exact:true}).click()
