@@ -106,7 +106,8 @@ export async function open(box: Box, password: string): Promise<Library> {
 						typeof e.diagnosis.result !== "string" ||
 						(e.diagnosis.ms !== undefined &&
 							!Number.isFinite(e.diagnosis.ms)))) ||
-				(e.alias !== undefined && typeof e.alias !== "string")
+				(e.note !== undefined && (typeof e.note !== "string" || e.note.length > 2048)) ||
+                (e.alias !== undefined && typeof e.alias !== "string")
 			)
 				throw Error("format");
 			identifiers.add(e.id);

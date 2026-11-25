@@ -1034,6 +1034,20 @@ export function Servers({ ru }: Props) {
 								}}
 							/>
 						</label>
+<label>
+							{t("Личная заметка", "Personal note")}
+							<input
+								maxLength={2048} defaultValue={e.note ?? ""}
+								onBlur={(ev) => {
+									const value = ev.target.value;
+									void act(() =>
+										edit(sub.id, e.id, (x) => {
+											x.note = value;
+										}),
+									);
+								}}
+							/>
+						</label>
 						<button
 							onClick={() =>
 								act(async () => {

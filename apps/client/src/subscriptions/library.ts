@@ -2,6 +2,7 @@ import type { Server } from "./parser";
 export type Entry = Server & {
 	id: string;
 	alias?: string;
+	note?: string;
 	favorite?: boolean;
 	hidden?: boolean;
 	rank?: number;
@@ -37,10 +38,9 @@ export function reconcile(old: Entry[], incoming: Server[]): Entry[] {
 			if (entry) used.add(entry.id);
 			return entry;
 		});
-	// A provider may rotate an endpoint or rename a node. Match remaining records only one-to-one.
+	// Match a changed record only when its endpoint is unique on both sides.
 	for (const signature of [
 		(s: Server) => [s.protocol, s.host, s.port],
-		(s: Server) => [s.protocol, s.name],
 	]) {
 		const choices = new Map<string, Entry | null>(),
 			counts = new Map<string, number>();
