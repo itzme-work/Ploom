@@ -61,6 +61,7 @@ export async function open(box: Box, password: string): Promise<Library> {
 		typeof data.selected !== "string"
 	)
 		throw Error("format");
+	const identifiers = new Set<string>();
 	for (const s of data.subscriptions) {
 		if (
 			!s ||
@@ -68,7 +69,7 @@ export async function open(box: Box, password: string): Promise<Library> {
 			typeof s.name !== "string" ||
 			typeof s.url !== "string" ||
 			typeof s.enabled !== "boolean" ||
-			!Number.isFinite(s.interval) ||
+			![0, -1, 15, 60, 360, 720, 1440].includes(s.interval) ||
 			!Number.isFinite(s.updated) ||
 			typeof s.traffic !== "string" ||
 			typeof s.site !== "string" ||
@@ -76,7 +77,9 @@ export async function open(box: Box, password: string): Promise<Library> {
 			s.entries.length > 12000
 		)
 			throw Error("format");
-		for (const e of s.entries)
+		if (identifiers.has(s.id)) throw Error("duplicate");
+		identifiers.add(s.id);
+		for (const e of s.entries) {
 			if (
 				!e ||
 				[
@@ -92,9 +95,22 @@ export async function open(box: Box, password: string): Promise<Library> {
 				!Number.isInteger(e.port) ||
 				e.port < 1 ||
 				e.port > 65535 ||
+				!Number.isFinite(e.added) ||
+				identifiers.has(e.id) ||
+				(e.hidden !== undefined && typeof e.hidden !== "boolean") ||
+				(e.favorite !== undefined && typeof e.favorite !== "boolean") ||
+				(e.rank !== undefined && !Number.isFinite(e.rank)) ||
+				(e.diagnosis !== undefined &&
+					(!e.diagnosis ||
+						!Number.isFinite(e.diagnosis.at) ||
+						typeof e.diagnosis.result !== "string" ||
+						(e.diagnosis.ms !== undefined &&
+							!Number.isFinite(e.diagnosis.ms)))) ||
 				(e.alias !== undefined && typeof e.alias !== "string")
 			)
 				throw Error("format");
+			identifiers.add(e.id);
+		}
 	}
 	return data;
 }

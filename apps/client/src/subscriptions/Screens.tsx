@@ -1,4 +1,4 @@
-import {readText,writeText} from '@tauri-apps/plugin-clipboard-manager'
+import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { openSite } from "./site";
 import { raster } from "./image";
 import { useConfirmation } from "./confirm";
@@ -184,7 +184,7 @@ export function Subscriptions({
 					<label>
 						{t("Конфигурации", "Configurations")}
 						<textarea
-                            aria-label={t("Конфигурации","Configurations")}
+							aria-label={t("Конфигурации", "Configurations")}
 							spellCheck={false}
 							value={text}
 							onChange={(e) => {
@@ -197,7 +197,9 @@ export function Subscriptions({
 					<button
 						onClick={() =>
 							run(async () => {
-								const content = await (isTauri()?readText():navigator.clipboard.readText());
+								const content = await (isTauri()
+									? readText()
+									: navigator.clipboard.readText());
 								clear();
 								if (/^https:\/\/\S+$/.test(content.trim()))
 									setUrl(content.trim());
@@ -416,6 +418,19 @@ export function Subscriptions({
 								<summary>
 									{t("Сведения и управление", "Details and actions")}
 								</summary>
+								{s.entries.some((entry) => entry.hidden) && (
+									<button
+										onClick={() =>
+											run(() =>
+												update(s.id, (sub) => {
+													for (const entry of sub.entries) entry.hidden = false;
+												}),
+											)
+										}
+									>
+										{t("Показать скрытые серверы", "Show hidden servers")}
+									</button>
+								)}
 								<label>
 									{t("Название", "Name")}
 									<input
@@ -439,7 +454,19 @@ export function Subscriptions({
 											const v = e.target.value.trim();
 											if (v)
 												void run(async () => {
-													if (new URL(v).protocol !== "https:") throw Error();
+													const parsed = new URL(v);
+													if (
+														parsed.protocol !== "https:" ||
+														parsed.username ||
+														parsed.password
+													)
+														throw Error();
+													if (
+														data.subscriptions.some(
+															(other) => other.id !== s.id && other.url === v,
+														)
+													)
+														throw Error("duplicate");
 													await update(s.id, (x) => {
 														x.url = v;
 													});
@@ -482,7 +509,9 @@ export function Subscriptions({
 														),
 													)
 												)
-													await (isTauri()?writeText(s.url):navigator.clipboard.writeText(s.url));
+													await (isTauri()
+														? writeText(s.url)
+														: navigator.clipboard.writeText(s.url));
 											})
 										}
 									>
@@ -1016,7 +1045,9 @@ export function Servers({ ru }: Props) {
 											),
 										)
 									)
-										await (isTauri()?writeText(e.raw):navigator.clipboard.writeText(e.raw));
+										await (isTauri()
+											? writeText(e.raw)
+											: navigator.clipboard.writeText(e.raw));
 								})
 							}
 						>

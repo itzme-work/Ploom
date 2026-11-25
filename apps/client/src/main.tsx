@@ -196,8 +196,8 @@ function App() {
 								onClick={() =>
 									msg(
 										t(
-											"Подключение появится в будущем релизе.",
-											"VPN support is planned for a future release.",
+											"Подключение запланировано на следующее крупное обновление.",
+											"VPN support is planned for the next major update.",
 										),
 									)
 								}
