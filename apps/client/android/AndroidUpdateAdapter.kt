@@ -24,6 +24,9 @@ import javax.net.ssl.HttpsURLConnection
 class UpdateFileProvider : FileProvider()
 
 @InvokeArg
+class ExportArgs { lateinit var name:String; lateinit var text:String }
+
+@InvokeArg
 class BrowserArgs { lateinit var expected: String }
 
 @InvokeArg
@@ -31,6 +34,35 @@ class InstallArgs { lateinit var expected: String; lateinit var progress: app.ta
 
 @TauriPlugin
 class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
+    @Command
+    fun libraryKey(invoke: Invoke) {
+        try {
+            val result = app.tauri.plugin.JSObject()
+            result.put("key", LibraryKey.unlock(host))
+            invoke.resolve(result)
+        } catch (e: Exception) { invoke.reject("Secure storage unavailable") }
+    }
+
+    @Command
+    fun exportDocument(invoke: Invoke) {
+        val args=invoke.parseArgs(ExportArgs::class.java)
+        val intent=Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+            .setType(if(args.name.endsWith(".json")) "application/json" else "text/plain")
+            .putExtra(Intent.EXTRA_TITLE,args.name)
+        startActivityForResult(invoke,intent,"exportResult")
+    }
+    @app.tauri.annotation.ActivityCallback
+    fun exportResult(invoke: Invoke,result: androidx.activity.result.ActivityResult) {
+        val uri=result.data?.data
+        if(result.resultCode!=Activity.RESULT_OK || uri==null){invoke.reject("Canceled");return}
+        Thread {
+            try {
+                val bytes=invoke.parseArgs(ExportArgs::class.java).text.toByteArray(Charsets.UTF_8)
+                requireNotNull(host.contentResolver.openOutputStream(uri,"wt")).use { it.write(bytes) }
+                invoke.resolve()
+            } catch(e:Exception){invoke.reject("Export failed")}
+        }.start()
+    }
     private val busy = AtomicBoolean(false)
 
     private val lock = Any()

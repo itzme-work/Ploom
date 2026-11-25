@@ -5,7 +5,7 @@ import xml.etree.ElementTree as ET
 
 root = Path(__file__).resolve().parents[1]
 main = root / "src-tauri/gen/android/app/src/main"
-for source in ("AndroidUpdateAdapter.kt", "ApkDownload.java"):
+for source in ("AndroidUpdateAdapter.kt", "ApkDownload.java", "LibraryKey.kt"):
     shutil.copyfile(root / "android" / source, main / "java" / source)
 android = "http://schemas.android.com/apk/res/android"
 ET.register_namespace("android", android)

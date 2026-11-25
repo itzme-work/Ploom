@@ -160,7 +160,7 @@ jobs:
           mkdir deliver
           cp "$(find test-android -name '*.apk' -print -quit)" deliver/Ploom-arm64.apk
           cp "$(find test-windows -name '*.exe' -print -quit)" deliver/Ploom.exe
-          export VERSION=0.1.0
+          export VERSION=$(jq -r .version apps/client/src-tauri/tauri.conf.json)
           cli=apps/client/node_modules/.bin/tauri
           "$cli" signer generate --ci --password fixture --write-keys "$scratch/key" >/dev/null
           TAURI_SIGNING_PRIVATE_KEY_PATH="$scratch/key" TAURI_SIGNING_PRIVATE_KEY_PASSWORD=fixture "$cli" signer sign --app-version "$VERSION" deliver/Ploom.exe >/dev/null
@@ -168,6 +168,6 @@ jobs:
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs deliver/Ploom-arm64.apk > "$scratch/cert"
           export CERT_DIGEST="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$scratch/cert")"
           bash scripts/verify-release-assets.sh
-          jq -e '.version=="0.1.0" and (.platforms["windows-x86_64"].signature|length>0)' deliver/latest.json
+          jq -e --arg version "$VERSION" '.version==$version and (.platforms["windows-x86_64"].signature|length>0)' deliver/latest.json
           mv deliver/Ploom.exe.sig "$scratch/saved.sig"
           if bash scripts/verify-release-assets.sh >/dev/null 2>&1; then exit 1; fi

@@ -37,3 +37,29 @@ pub async fn open_update_browser(app: tauri::AppHandle, expected: String) -> Res
         .await
         .map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub async fn library_key(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    app.state::<PluginHandle<tauri::Wry>>()
+        .run_mobile_plugin_async("libraryKey", serde_json::json!({}))
+        .await
+        .map_err(|_| "Secure storage unavailable".into())
+}
+
+#[tauri::command]
+pub async fn library_export(
+    app: tauri::AppHandle,
+    name: String,
+    text: String,
+) -> Result<(), String> {
+    if !super::valid_export(&name, &text) {
+        return Err("Invalid export".into());
+    }
+    app.state::<PluginHandle<tauri::Wry>>()
+        .run_mobile_plugin_async(
+            "exportDocument",
+            serde_json::json!({"name":name,"text":text}),
+        )
+        .await
+        .map_err(|_| "Export canceled or failed".into())
+}

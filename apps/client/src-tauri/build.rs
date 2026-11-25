@@ -4,6 +4,10 @@ fn main() {
     }
     let manifest = tauri_build::AppManifest::new().commands(&[
         "install_update",
+        "library_key",
+        "library_export",
+        "subscription_fetch",
+        "subscription_probe",
         "cancel_download",
         "open_update_browser",
     ]);

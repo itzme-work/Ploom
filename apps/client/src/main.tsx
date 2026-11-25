@@ -6,7 +6,20 @@ import semver from "semver";
 import { choices, useSettings } from "./store";
 import { checkRelease, current } from "./releases";
 import "./style.css";
+import { Subscriptions, Servers, download } from "./subscriptions/Screens";
+import { usage } from "./subscriptions/library";
+import { getCurrent, onOpenUrl } from "@tauri-apps/plugin-deep-link";
+import { startLibrary, useLibrary } from "./subscriptions/manager";
 function App() {
+	const library = useLibrary((s) => s.data);
+	const selectedSub = library.subscriptions.find(
+		(s) => s.enabled && s.entries.some((e) => e.id === library.selected),
+	);
+	const selectedServer = selectedSub?.entries.find(
+		(e) => e.id === library.selected,
+	);
+	useEffect(startLibrary, []);
+
 	const { prefs: p, set } = useSettings(),
 		[page, nav] = useState(0),
 		[message, msg] = useState(""),
@@ -87,6 +100,47 @@ function App() {
 		Stable: "Стабильный",
 		Beta: "Бета",
 	};
+	const [incoming, setIncoming] = useState("");
+	useEffect(() => {
+		if (!isTauri()) return;
+		let alive = true,
+			off: (() => void) | undefined;
+		const receive = (urls: string[]) => {
+			if (!alive) return;
+			for (const raw of urls) {
+				try {
+					if (raw.length > 8192) continue;
+					const u = new URL(raw),
+						source = u.searchParams.get("url");
+					if (
+						u.protocol === "ploom:" &&
+						u.hostname === "import" &&
+						source &&
+						new URL(source).protocol === "https:"
+					) {
+						setIncoming(source);
+						nav(1);
+						break;
+					}
+				} catch {
+					/* Ignore unknown deep links. */
+				}
+			}
+		};
+		void onOpenUrl(receive)
+			.then((fn) => {
+				if (alive) off = fn;
+				else fn();
+			})
+			.catch(() => {});
+		void getCurrent()
+			.then((urls) => receive(urls ?? []))
+			.catch(() => {});
+		return () => {
+			alive = false;
+			off?.();
+		};
+	}, []);
 	const icons = [House, Layers, Server, Settings];
 	return (
 		<main
@@ -149,7 +203,27 @@ function App() {
 								<Power size={46} />
 							</button>
 							<h2>{t("Отключено", "Disconnected")}</h2>
-							<p>{t("Сервер не выбран", "No server selected")}</p>
+							<p>
+								{selectedServer
+									? [
+											selectedSub?.name,
+											selectedServer.alias ?? selectedServer.name,
+											selectedServer.protocol,
+											selectedServer.diagnosis?.ms != null
+												? "TCP " + selectedServer.diagnosis.ms + " ms"
+												: "",
+										]
+											.filter(Boolean)
+											.join(" · ")
+									: t("Сервер не выбран", "No server selected")}
+							</p>
+							{selectedSub &&
+								usage(selectedSub.traffic).remaining !== undefined && (
+									<p>
+										{t("Осталось байт", "Remaining bytes")} ·{" "}
+										{usage(selectedSub.traffic).remaining}
+									</p>
+								)}
 							<output>{message}</output>
 						</section>
 						<div className="links">
@@ -161,39 +235,13 @@ function App() {
 						</div>
 					</>
 				) : page === 1 ? (
-					<section>
-						<h2>{t("Подписок пока нет", "No subscriptions yet")}</h2>
-						<p>
-							{t(
-								"Импорт появится позже. Введённые данные остаются только в форме.",
-								"Import is planned. Entries stay in this form only.",
-							)}
-						</p>
-						{[
-							t("Название", "Name"),
-							t("Ссылка подписки", "Subscription URL"),
-						].map((s) => (
-							<label key={s}>
-								{s}
-								<input autoComplete="off" spellCheck={false} aria-label={s} />
-							</label>
-						))}
-						<button disabled>QR · {t("Скоро", "Planned")}</button>
-					</section>
+					<Subscriptions
+						ru={ru}
+						incoming={incoming}
+						consumed={() => setIncoming("")}
+					/>
 				) : page === 2 ? (
-					<section>
-						<Server />
-						<h2>{t("Список серверов пуст", "No servers yet")}</h2>
-						<p>
-							{t(
-								"Серверы появятся после импорта подписки.",
-								"Servers will appear after subscription import.",
-							)}
-						</p>
-						<button disabled>
-							{t("Сортировка · Задержка", "Sort · Latency")}
-						</button>
-					</section>
+					<Servers ru={ru} />
 				) : (
 					<>
 						<section>
@@ -224,6 +272,16 @@ function App() {
 						</section>
 						<section>
 							<h2>{t("Обновления", "Updates")}</h2>
+							<button
+								onClick={() =>
+									void download(
+										"ploom-settings.json",
+										JSON.stringify({ version: 1, preferences: p }, null, 2),
+									).catch(() => show(t("Ошибка экспорта", "Export failed")))
+								}
+							>
+								{t("Экспорт настроек", "Export preferences")}
+							</button>
 							<p>
 								Ploom {current} · {p.channel}
 							</p>

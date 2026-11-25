@@ -1,6 +1,6 @@
 [package]
 name = "ploom"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [lib]
@@ -19,3 +19,24 @@ semver = "1"
 tauri-plugin-updater = "2"
 reqwest = { version = "0.13", features = ["stream"] }
 
+
+[dependencies.subscription_http]
+package = "reqwest"
+version = "0.12"
+default-features = false
+features = ["rustls-tls-webpki-roots"]
+
+[dependencies.tokio]
+version = "1"
+features = ["net", "time", "sync"]
+
+[target.'cfg(windows)'.dependencies.windows-sys]
+version="0.61"
+features=["Win32_Security_Cryptography","Win32_Foundation"]
+[target.'cfg(windows)'.dependencies.tempfile]
+version="3"
+
+[dependencies.tauri-plugin-deep-link]
+version="2"
+[target.'cfg(windows)'.dependencies.rfd]
+version="0.15"

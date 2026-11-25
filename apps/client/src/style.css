@@ -7,3 +7,4 @@
   nav button,.links button{min-width:0;overflow-wrap:anywhere}
   h1{font-size:clamp(1.5em,8vw,2em)}
 }
+fieldset{min-width:0;border:0;margin:0;padding:0}textarea{font:inherit;color:inherit;background:Canvas;border:1px solid GrayText;border-radius:.6em;min-height:5em;padding:.6em}section :is(input,select,textarea){min-width:0;max-width:100%}section h2,section p,output{overflow-wrap:anywhere}section details{margin-block:.6em}section button{margin:.15em}section label{flex-wrap:wrap}section textarea{width:100%}

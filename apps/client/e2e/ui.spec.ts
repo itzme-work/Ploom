@@ -18,7 +18,7 @@ test('release states distinguish current, available and network failure',async({
  await page.goto('/')
  await page.getByRole('button',{name:'Settings'}).click()
  const check=page.getByRole('button',{name:'Check for updates'})
- for(const [tag,text] of [['v0.1.0','Ploom is up to date'],['v0.0.9','Ploom is up to date'],['v0.2.0','0.2.0']]){
+ for(const [tag,text] of [['v0.1.0','Ploom is up to date'],['v0.0.9','Ploom is up to date'],['v0.2.1','0.2.1']]){
   await page.route('https://api.github.com/**',route=>route.fulfill({json:[{tag_name:tag,draft:false,prerelease:false,body:'Changes'}]}))
   await check.click()
   await expect(page.getByRole('status')).toContainText(text)
