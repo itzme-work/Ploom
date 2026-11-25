@@ -45,3 +45,10 @@ it('retains the snapshot and updates its check timestamp on HTTP 304',async()=>{
  expect(current.entries).toEqual(sub.entries)
  expect(current.updated).toBeGreaterThan(sub.updated)
 })
+it('preserves the last full profile when the provider changes format',async()=>{
+ await change(d=>{d.subscriptions[0].profile={format:'sing-box JSON',source:'{"outbounds":[]}'}})
+ const current=useLibrary.getState().data.subscriptions[0]
+ request.mockResolvedValue({text:previous,traffic:'',site:'',title:''})
+ await expect(refresh(current)).rejects.toThrow('profile format changed')
+ expect(useLibrary.getState().data.subscriptions[0].profile).toEqual(current.profile)
+})

@@ -61,6 +61,7 @@ export function parse(text: string): Promise<Preview> {
 	});
 }
 export type Feed = {
+	suggestedHours?: number;
 	etag?: string;
 	modified?: string;
 	text: string;
@@ -95,6 +96,10 @@ export async function refresh(s: Subscription) {
 		await change((data) => {
 			const sub = data.subscriptions.find((x) => x.id === s.id);
 			if (!sub || !sub.enabled || sub.url !== s.url) return;
+			if (sub.profile && sub.profile.format !== preview.format)
+				throw Error("profile format changed");
+			if (sub.profile)
+				sub.profile = { format: preview.format, source: feed.text };
 			Object.assign(sub, {
 				entries: reconcile(sub.entries, preview.servers),
 				etag: feed.etag,

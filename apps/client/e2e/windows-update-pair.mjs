@@ -1,4 +1,5 @@
 // Executed on a disposable Windows runner with the two signed NSIS bundles.
+import {libraryFixture} from './native-library.mjs'
 import { chromium } from 'playwright'
 import { expect } from '@playwright/test'
 import { spawn } from 'node:child_process'
@@ -32,6 +33,7 @@ try {
   if(baseline) await field.selectOption(value)
   await expect(field).toHaveValue(value)
  }
+ if (process.env.PLOOM_MIGRATE_LIBRARY === "1") await libraryFixture(page,baseline)
  if (!baseline) {
   // Offer only the older release to the installed 0.1.1 client.
   await page.route('https://api.github.com/**',route=>route.fulfill({json:[

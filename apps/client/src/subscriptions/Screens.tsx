@@ -68,6 +68,7 @@ export function Subscriptions({
 		[pass, setPass] = useState(""),
 		[msg, status] = useState(""),
 		[busy, working] = useState(false);
+	const [fullProfile, setFullProfile] = useState(false);
 	const [preview, setPreview] = useState<Preview>(),
 		[feed, setFeed] = useState<Feed>(),
 		[selected, select] = useState<Set<number>>(new Set()),
@@ -113,6 +114,7 @@ export function Subscriptions({
 		setPreview(undefined);
 		const f = remote ? await fetchFeed(remote) : undefined,
 			p = await parse(f?.text ?? input);
+		setFullProfile(false);
 		setPreview(p);
 		setFeed(f);
 		select(new Set(p.servers.map((_, i) => i)));
@@ -131,6 +133,7 @@ export function Subscriptions({
 			setName(title?.slice(0, 256) || (remote ? new URL(remote).hostname : ""));
 	};
 	const clear = () => {
+		setFullProfile(false);
 		setPreview(undefined);
 		setFeed(undefined);
 	};
@@ -212,14 +215,29 @@ export function Subscriptions({
 					>
 						{t("Вставить", "Paste")}
 					</button>
-					{isTauri() && /Android/.test(navigator.userAgent) && <button onClick={()=>run(async()=>{
-                        const {text:code}=await invoke<{text:string}>("scan_qr");
-                        if (!code) return;
-                        clear();
-                        if (/^https:\/\/\S+$/.test(code.trim())) { setText("");setUrl(code.trim()); }
-                        else {setUrl("");setText(code);}
-                    })}>{t("Сканировать камерой","Scan with camera")}</button>}
-                    <label>
+					{isTauri() && /Android/.test(navigator.userAgent) && (
+						<button
+							onClick={() =>
+								run(async () => {
+									const { text: code } = await invoke<{ text: string }>(
+										"scan_qr",
+									);
+									if (!code) return;
+									clear();
+									if (/^https:\/\/\S+$/.test(code.trim())) {
+										setText("");
+										setUrl(code.trim());
+									} else {
+										setUrl("");
+										setText(code);
+									}
+								})
+							}
+						>
+							{t("Сканировать камерой", "Scan with camera")}
+						</button>
+					)}
+					<label>
 						{t("Файл или изображение QR", "File or QR image")}
 						<input
 							type="file"
@@ -247,6 +265,33 @@ export function Subscriptions({
 					</button>
 					{preview && (
 						<>
+							{[
+								"WireGuard",
+								"Clash/Mihomo",
+								"Xray JSON",
+								"sing-box JSON",
+							].includes(preview.format) && (
+								<label>
+									<input
+										type="checkbox"
+										checked={fullProfile}
+										onChange={(event) => setFullProfile(event.target.checked)}
+									/>
+									{t(
+										"Полный профиль: сохранить исходный документ с DNS, группами и правилами. Подключение использует только выбранный сервер.",
+										"Full profile: retain the source document with DNS, groups and rules. Connections use only the selected server.",
+									)}
+								</label>
+							)}
+							{feed?.suggestedHours && (
+								<p>
+									{t(
+										"Рекомендуемый интервал (ч)",
+										"Provider refresh interval (hours)",
+									)}{" "}
+									· {feed.suggestedHours}
+								</p>
+							)}
 							<p>
 								{name || feed?.title || t("Без названия", "Unnamed")} ·{" "}
 								{preview.format} · {preview.servers.length}{" "}
@@ -312,6 +357,12 @@ export function Subscriptions({
 												enabled: true,
 												interval: 0,
 												updated: Date.now(),
+												profile: fullProfile
+													? {
+															format: preview.format,
+															source: feed?.text ?? text,
+														}
+													: undefined,
 												etag: feed?.etag,
 												modified: feed?.modified,
 												traffic: feed?.traffic ?? "",
@@ -427,6 +478,27 @@ export function Subscriptions({
 								<summary>
 									{t("Сведения и управление", "Details and actions")}
 								</summary>
+								{s.profile && (
+									<button
+										onClick={() =>
+											run(async () => {
+												if (
+													await ask(
+														t(
+															"Экспортировать полный профиль с секретами без шифрования?",
+															"Export the full profile and secrets without encryption?",
+														),
+													)
+												)
+													await download("ploom-config.txt", s.profile!.source);
+											})
+										}
+									>
+										{t("Экспорт полного профиля", "Export full profile")} ·{" "}
+										{s.profile.format}
+									</button>
+								)}
+
 								{s.entries.some((entry) => entry.hidden) && (
 									<button
 										onClick={() =>

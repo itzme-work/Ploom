@@ -66,6 +66,7 @@ jobs:
             adb install packages/Ploom-vpn-arm64-debug.apk
             node apps/client/e2e/android-vpn.mjs
   windows-proxy:
+    permissions: {contents: read, actions: read}
     runs-on: windows-2022
     timeout-minutes: 45
     steps:
@@ -100,6 +101,24 @@ jobs:
           '{"bundle":{"resources":["engine/*"]}}' | Set-Content src-tauri/engine-config.json -Encoding utf8NoBOM
           npm run tauri -- build --debug --bundles nsis --config src-tauri/engine-config.json
           if ($LASTEXITCODE) { throw 'NSIS build failed' }
+      - name: Install over signed 0.2.0 and reopen the encrypted library
+        working-directory: apps/client
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          gh run download 45560158367 --repo itzme-work/Ploom -n verified-release -D "$env:RUNNER_TEMP/baseline"
+          if ($LASTEXITCODE) { throw 'Original signed baseline unavailable' }
+          $dir = Join-Path $env:RUNNER_TEMP 'ploom-03-upgrade'
+          $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $env:RUNNER_TEMP 'ploom-03-profile'
+          $env:PLOOM_MIGRATE_LIBRARY = '1'
+          $installer = (Get-ChildItem src-tauri/target/debug/bundle/nsis/*.exe).FullName
+          foreach ($stage in @(@('0.2.0',"$env:RUNNER_TEMP/baseline/Ploom.exe"),@('0.3.0',$installer))) {
+            $proc = Start-Process $stage[1] -ArgumentList "/S /D=$dir" -Wait -PassThru
+            if ($proc.ExitCode) { throw 'Migration installer failed' }
+            node e2e/windows-update-pair.mjs "$dir/ploom.exe" $stage[0] '0.2.0'
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          }
       - name: Test installed Windows local proxy and process cleanup
         working-directory: apps/client
         shell: pwsh

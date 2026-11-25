@@ -698,7 +698,7 @@ function App() {
 							)}
 							<details>
 								<summary>{t("Что нового", "What’s new")}</summary>
-								{current} · Foundation · Apache-2.0
+								{current} · Ploom · Apache-2.0 / GPL-3.0-or-later
 							</details>
 						</section>
 					</>

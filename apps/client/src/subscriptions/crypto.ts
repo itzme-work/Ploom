@@ -68,6 +68,13 @@ export async function open(box: Box, password: string): Promise<Library> {
 			typeof s.id !== "string" ||
 			typeof s.name !== "string" ||
 			typeof s.url !== "string" ||
+			(s.profile !== undefined &&
+				(!s.profile ||
+					!["WireGuard", "Clash/Mihomo", "Xray JSON", "sing-box JSON"].includes(
+						s.profile.format,
+					) ||
+					typeof s.profile.source !== "string" ||
+					new TextEncoder().encode(s.profile.source).length > 4194304)) ||
 			typeof s.enabled !== "boolean" ||
 			![0, -1, 15, 60, 360, 720, 1440].includes(s.interval) ||
 			!Number.isFinite(s.updated) ||

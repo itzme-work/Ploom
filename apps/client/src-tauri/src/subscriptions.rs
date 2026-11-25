@@ -139,6 +139,10 @@ where
             header("profile-web-page-url"),
             header("profile-title"),
         );
+        let suggested_hours = header("profile-update-interval")
+            .parse::<u32>()
+            .ok()
+            .filter(|n| (1..=168).contains(n));
         let (etag, modified) = if hop == 0 {
             (header("etag"), header("last-modified"))
         } else {
@@ -153,7 +157,7 @@ where
         }
         let text = String::from_utf8(bytes).map_err(|_| "encoding")?;
         return Ok(
-            serde_json::json!({"text":text,"traffic":traffic,"site":site,"title":title,"etag":etag,"modified":modified}),
+            serde_json::json!({"text":text,"traffic":traffic,"site":site,"title":title,"etag":etag,"modified":modified,"suggestedHours":suggested_hours}),
         );
     }
     Err("redirect".into())

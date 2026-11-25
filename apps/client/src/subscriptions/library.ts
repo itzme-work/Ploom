@@ -17,6 +17,7 @@ export type Subscription = {
 	enabled: boolean;
 	interval: number;
 	updated: number;
+	profile?: { format: string; source: string };
 	etag?: string;
 	modified?: string;
 	traffic: string;
