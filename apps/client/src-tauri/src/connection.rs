@@ -7,7 +7,10 @@ pub(crate) async fn outbound(raw: &str, lan_endpoint: Option<String>) -> Result<
     if raw.len() > 8192 || raw.contains('\\') || raw.chars().any(char::is_control) {
         return Err("invalid".into());
     }
-    let u = Url::parse(raw).map_err(|_| "invalid")?;
+    let u = match raw.strip_prefix("vmess://") {
+        Some(payload) if !payload.contains('@') => vmess_json(payload)?,
+        _ => Url::parse(raw).map_err(|_| "invalid")?,
+    };
     let host = u.host_str().ok_or("address")?;
     let port = u
         .port_or_known_default()
@@ -38,6 +41,108 @@ pub(crate) async fn outbound(raw: &str, lan_endpoint: Option<String>) -> Result<
     }
     out["server_port"] = json!(port);
     Ok(out)
+}
+
+// Convert the legacy v2rayN sharing document into the same checked URI schema.
+fn vmess_json(payload: &str) -> Result<Url, String> {
+    use base64::{
+        engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD},
+        Engine,
+    };
+    let bytes = [STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD]
+        .iter()
+        .find_map(|engine| engine.decode(payload).ok())
+        .ok_or("invalid")?;
+    let value: Value = serde_json::from_slice(&bytes).map_err(|_| "invalid")?;
+    let fields = value.as_object().ok_or("invalid")?;
+    if fields.keys().any(|key| {
+        !matches!(
+            key.as_str(),
+            "v" | "ps"
+                | "add"
+                | "port"
+                | "id"
+                | "aid"
+                | "scy"
+                | "net"
+                | "type"
+                | "host"
+                | "path"
+                | "tls"
+                | "sni"
+                | "alpn"
+                | "fp"
+        )
+    }) {
+        return Err("options".into());
+    }
+    let text = |key: &str| -> Result<&str, String> {
+        match fields.get(key) {
+            None => Ok(""),
+            Some(Value::String(s)) if !s.chars().any(char::is_control) => Ok(s),
+            _ => Err("invalid".into()),
+        }
+    };
+    for (key, expected) in [("v", 2), ("aid", 0)] {
+        if let Some(n) = fields.get(key) {
+            if n.as_u64().or_else(|| n.as_str()?.parse().ok()) != Some(expected) {
+                return Err("options".into());
+            }
+        }
+    }
+    if !matches!(text("type")?, "" | "none") {
+        return Err("options".into());
+    }
+    let host = text("add")?;
+    if host.is_empty()
+        || host
+            .chars()
+            .any(|c| c.is_whitespace() || "/?#@%".contains(c))
+    {
+        return Err("address".into());
+    }
+    let port = fields.get("port").ok_or("port")?;
+    let port = port
+        .as_u64()
+        .or_else(|| port.as_str()?.parse().ok())
+        .and_then(|n| u16::try_from(n).ok())
+        .filter(|n| *n != 0)
+        .ok_or("port")?;
+    let id = uuid::Uuid::parse_str(text("id")?).map_err(|_| "credentials")?;
+    let mut uri = Url::parse("vmess://placeholder.invalid").map_err(|_| "invalid")?;
+    if let Ok(ip) = host
+        .trim_matches(&['[', ']'][..])
+        .parse::<std::net::IpAddr>()
+    {
+        uri.set_ip_host(ip).map_err(|_| "address")?;
+    } else {
+        if host.contains(':') {
+            return Err("address".into());
+        }
+        uri.set_host(Some(host)).map_err(|_| "address")?;
+    }
+    uri.set_port(Some(port)).map_err(|_| "port")?;
+    uri.set_username(&id.to_string())
+        .map_err(|_| "credentials")?;
+    {
+        let mut params = uri.query_pairs_mut();
+        for (source, dest) in [
+            ("scy", "cipher"),
+            ("net", "type"),
+            ("host", "host"),
+            ("path", "path"),
+            ("tls", "security"),
+            ("sni", "sni"),
+            ("alpn", "alpn"),
+            ("fp", "fp"),
+        ] {
+            let val = text(source)?;
+            if !val.is_empty() {
+                params.append_pair(dest, val);
+            }
+        }
+    }
+    Ok(uri)
 }
 
 fn configuration(u: &Url) -> Result<Value, String> {
@@ -154,6 +259,17 @@ fn configuration(u: &Url) -> Result<Value, String> {
     } else if security != "none" || secure == "tls" {
         return Err("options".into());
     }
+    if kind == "vmess" {
+        if let Some(cipher) = args.remove("cipher") {
+            if !matches!(
+                cipher.as_str(),
+                "auto" | "aes-128-gcm" | "chacha20-poly1305"
+            ) {
+                return Err("options".into());
+            }
+            out["security"] = json!(cipher);
+        }
+    }
     if kind == "vless" {
         if args.remove("encryption").is_some_and(|v| v != "none") {
             return Err("options".into());
@@ -197,6 +313,21 @@ fn configuration(u: &Url) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn vmess_share_preserves_aead_tls_and_websocket_parameters() {
+        use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
+        let mut doc = json!({"v":"2","add":"2001:db8::1","port":"443","id":"00000000-0000-4000-8000-000000000001",
+            "aid":"0","scy":"aes-128-gcm","net":"ws","tls":"tls","sni":"fixture.invalid","host":"front.invalid","path":"/a?x=1&y=2"});
+        let parse = |v: &Value| vmess_json(&STANDARD_NO_PAD.encode(v.to_string()));
+        let uri = parse(&doc).unwrap();
+        let config = configuration(&uri).unwrap();
+        assert_eq!(uri.port(), Some(443));
+        assert_eq!(config["security"], "aes-128-gcm");
+        assert_eq!(config["transport"]["path"], "/a?x=1&y=2");
+        assert_eq!(config["tls"]["server_name"], "fixture.invalid");
+        doc["allowInsecure"] = json!(true);
+        assert!(parse(&doc).is_err());
+    }
     #[test]
     fn shadowsocks_sip002_preserves_password_and_rejects_unhandled_plugins() {
         let uri = "ss://YWVzLTI1Ni1nY206YTpi@example.invalid:443";
