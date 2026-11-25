@@ -11,7 +11,30 @@ import java.util.concurrent.ExecutorService;
 
 public final class PloomVpnService extends VpnService implements CommandServerHandler {
     public static volatile String state = "idle";
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final java.util.concurrent.ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
+    private static volatile long[] snapshot;
+    private long started, up, down, last;
+    public static long[] metrics() { long[] v=snapshot;return v==null?null:v.clone(); }
+    @Override public void onCreate(){
+        super.onCreate();
+        executor.scheduleWithFixedDelay(this::sample,1,2,java.util.concurrent.TimeUnit.SECONDS);
+    }
+    private void sample(){
+        if(server==null || !"tunnel-open".equals(state))return;
+        PloomTraffic traffic=server.ploomTraffic();
+        if(traffic==null)return;
+        long now=android.os.SystemClock.elapsedRealtime(), interval=Math.max(1,now-last);
+        long sent=traffic.getUpload(),received=traffic.getDownload();
+        long du=Math.max(0,sent-up),dd=Math.max(0,received-down);
+        snapshot=new long[]{sent,received,du*1000/interval,dd*1000/interval,(now-started)/1000};
+        if(du+dd>0){
+            String day=new java.text.SimpleDateFormat("yyyy-MM-dd",java.util.Locale.ROOT).format(new java.util.Date());
+            android.content.SharedPreferences prefs=getSharedPreferences("ploom.traffic",MODE_PRIVATE);
+            prefs.edit().putLong(day+"/up",prefs.getLong(day+"/up",0)+du)
+                .putLong(day+"/down",prefs.getLong(day+"/down",0)+dd).apply();
+        }
+        up=sent;down=received;last=now;
+    }
     private CommandServer server;
     private AndroidPlatform platform;
     private static final int NOTICE = 31;
@@ -49,7 +72,7 @@ public final class PloomVpnService extends VpnService implements CommandServerHa
                 platform = new AndroidPlatform(this);
                 server = Libbox.newCommandServer(this,platform);
                 server.startOrReloadService(config,new OverrideOptions());
-                state="tunnel-open";
+                started=last=android.os.SystemClock.elapsedRealtime();up=down=0;state="tunnel-open";sample();
             } catch (Exception | LinkageError error) {
                 shutdown(); state="error"; stopSelfResult(id);
             }
@@ -57,6 +80,7 @@ public final class PloomVpnService extends VpnService implements CommandServerHa
         return START_NOT_STICKY;
     }
     private void shutdown() {
+        sample(); snapshot=null;
         if (server != null) {
             try { server.closeService(); } catch (Exception ignored) {}
             try { server.close(); } catch (Exception ignored) {}

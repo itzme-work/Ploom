@@ -1,7 +1,14 @@
 import { useConfirmation } from "./subscriptions/confirm";
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { House, Layers, Server, Settings, Power } from "lucide-react";
+import {
+	House,
+	Layers,
+	Server,
+	Settings,
+	ChartLine,
+	Power,
+} from "lucide-react";
 import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
 import semver from "semver";
 import { choices, useSettings } from "./store";
@@ -34,7 +41,9 @@ function App() {
 	const [downloading, setDownloading] = useState(false);
 	const android = isTauri() && /Android/.test(navigator.userAgent);
 	const [tunnel, setTunnel] = useState("idle");
-	const [systemProxy,setSystemProxy]=useState(false);
+	const [systemProxy, setSystemProxy] = useState(false);
+	const [totals, setTotals] = useState<number[]>();
+	const [traffic, setTraffic] = useState<number[]>();
 	const [proxyPort, setProxyPort] = useState<number>();
 	const windows = isTauri() && /Windows/.test(navigator.userAgent);
 	const [requesting, request] = useState(false);
@@ -42,13 +51,14 @@ function App() {
 		if (!android && !windows) return;
 		let alive = true;
 		const poll = () =>
-			invoke<{ state: string; port?: number }>(
+			invoke<{ state: string; port?: number; traffic?: number[] }>(
 				android ? "tunnel_state" : "proxy_state",
 			)
-				.then(({ state, port }) => {
+				.then(({ state, port, traffic }) => {
 					if (alive) {
 						setTunnel(state);
 						setProxyPort(port);
+						setTraffic(traffic);
 					}
 				})
 				.catch(() => {
@@ -85,7 +95,7 @@ function App() {
 				const command = android ? "tunnel_start" : "proxy_start";
 				const raw = selectedServer?.raw;
 				try {
-					await invoke(command, { raw,system:systemProxy });
+					await invoke(command, { raw, system: systemProxy });
 				} catch (error) {
 					const required = String(error);
 					if (!required.startsWith("lan:")) throw error;
@@ -100,7 +110,11 @@ function App() {
 								"?",
 						)
 					)
-						await invoke(command, { raw, system:systemProxy, lanEndpoint: endpoint });
+						await invoke(command, {
+							raw,
+							system: systemProxy,
+							lanEndpoint: endpoint,
+						});
 				}
 			}
 			msg("");
@@ -127,6 +141,7 @@ function App() {
 		t("Подписки", "Subscriptions"),
 		t("Серверы", "Servers"),
 		t("Настройки", "Settings"),
+		t("Статистика", "Statistics"),
 	];
 	async function check() {
 		if (busy) return;
@@ -231,7 +246,25 @@ function App() {
 			off?.();
 		};
 	}, []);
-	const icons = [House, Layers, Server, Settings];
+	useEffect(() => {
+		if (page !== 4 || !android) return;
+		let alive = true;
+		const poll = () =>
+			invoke<{ bytes: number[] }>("traffic_summary")
+				.then((r) => {
+					if (alive) setTotals(r.bytes);
+				})
+				.catch(() => {
+					if (alive) setTotals(undefined);
+				});
+		void poll();
+		const id = setInterval(poll, 5000);
+		return () => {
+			alive = false;
+			clearInterval(id);
+		};
+	}, [page, android]);
+	const icons = [House, Layers, Server, Settings, ChartLine];
 	return (
 		<main
 			data-style={p.style}
@@ -281,9 +314,29 @@ function App() {
 				{page === 0 ? (
 					<>
 						<section className="hero">
-                            {windows && tunnel!=="unavailable" && <label>{t("Режим Windows","Windows mode")}<select value={systemProxy?"system":"local"} disabled={tunnel==="local-process" || requesting} onChange={event=>setSystemProxy(event.target.value==="system")}>
-                            <option value="local">Local Proxy</option><option value="system">System Proxy</option></select></label>}
-                            {windows && systemProxy && <p>{t("Некоторые приложения игнорируют системный прокси.","Some applications ignore the system proxy.")}</p>}
+							{windows && tunnel !== "unavailable" && (
+								<label>
+									{t("Режим Windows", "Windows mode")}
+									<select
+										value={systemProxy ? "system" : "local"}
+										disabled={tunnel === "local-process" || requesting}
+										onChange={(event) =>
+											setSystemProxy(event.target.value === "system")
+										}
+									>
+										<option value="local">Local Proxy</option>
+										<option value="system">System Proxy</option>
+									</select>
+								</label>
+							)}
+							{windows && systemProxy && (
+								<p>
+									{t(
+										"Некоторые приложения игнорируют системный прокси.",
+										"Some applications ignore the system proxy.",
+									)}
+								</p>
+							)}
 							<button
 								className="power"
 								aria-label={
@@ -335,6 +388,25 @@ function App() {
 										{usage(selectedSub.traffic).remaining}
 									</p>
 								)}
+							{traffic && (
+								<dl>
+									<dt>
+										{t(
+											"Передано / получено за сессию",
+											"Session upload / download",
+										)}
+									</dt>
+									<dd>
+										{traffic[0]} / {traffic[1]} B
+									</dd>
+									<dt>{t("Отправка / загрузка", "Upload / download speed")}</dt>
+									<dd>
+										{traffic[2]} / {traffic[3]} B/s
+									</dd>
+									<dt>{t("Длительность сессии", "Session duration")}</dt>
+									<dd>{traffic[4]} s</dd>
+								</dl>
+							)}
 							<output>{message}</output>
 						</section>
 						<div className="links">
@@ -345,6 +417,69 @@ function App() {
 							))}
 						</div>
 					</>
+				) : page === 4 ? (
+					<section>
+						<h2>
+							{t("Локальные счётчики трафика", "Locally measured traffic")}
+						</h2>
+						{totals ? (
+							<>
+								<table>
+									<thead>
+										<tr>
+											<th>{t("Период", "Period")}</th>
+											<th>{t("Передано, байт", "Sent, bytes")}</th>
+											<th>{t("Получено, байт", "Received, bytes")}</th>
+										</tr>
+									</thead>
+									<tbody>
+										{[
+											t("Сегодня", "Today"),
+											t("7 дней", "7 days"),
+											t("30 дней", "30 days"),
+										].map((label, i) => (
+											<tr key={label}>
+												<th>{label}</th>
+												<td>{totals[i * 2]}</td>
+												<td>{totals[i * 2 + 1]}</td>
+											</tr>
+										))}
+									</tbody>
+								</table>
+								<button
+									onClick={async () => {
+										if (
+											await confirmLan(
+												t(
+													"Очистить локальную статистику?",
+													"Clear local statistics?",
+												),
+											)
+										) {
+											try {
+												await invoke("clear_traffic");
+												setTotals(
+													(await invoke<{ bytes: number[] }>("traffic_summary"))
+														.bytes,
+												);
+											} catch {
+												setTotals(undefined);
+											}
+										}
+									}}
+								>
+									{t("Очистить статистику", "Clear statistics")}
+								</button>
+							</>
+						) : (
+							<p>
+								{t(
+									"Нет данных счётчика этой платформы.",
+									"No counter data for this platform.",
+								)}
+							</p>
+						)}
+					</section>
 				) : page === 1 ? (
 					<Subscriptions
 						ru={ru}

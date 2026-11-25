@@ -101,3 +101,19 @@ pub async fn scan_qr(app: tauri::AppHandle) -> Result<serde_json::Value, String>
         .await
         .map_err(|_| "camera".into())
 }
+
+#[tauri::command]
+pub async fn traffic_summary(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    app.state::<PluginHandle<tauri::Wry>>()
+        .run_mobile_plugin_async("trafficSummary", serde_json::json!({}))
+        .await
+        .map_err(|_| "statistics".into())
+}
+
+#[tauri::command]
+pub async fn clear_traffic(app: tauri::AppHandle) -> Result<(), String> {
+    app.state::<PluginHandle<tauri::Wry>>()
+        .run_mobile_plugin_async("clearTraffic", serde_json::json!({}))
+        .await
+        .map_err(|_| "statistics".into())
+}

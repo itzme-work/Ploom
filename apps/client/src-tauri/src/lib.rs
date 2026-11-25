@@ -30,6 +30,8 @@ pub fn run() {
         .plugin(android::plugin())
         .invoke_handler(tauri::generate_handler![
             subscriptions::library_site,
+            android::traffic_summary,
+            android::clear_traffic,
             android::scan_qr,
             android::library_export,
             android::tunnel_start,

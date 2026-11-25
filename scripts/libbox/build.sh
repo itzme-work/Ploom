@@ -14,6 +14,7 @@ echo "1c4d2b3bf261a8d98e1b026be0bbcddbcb3f53bbca77eb15e8f25f7d4e602e59  $archive
 tar -xzf "$archive" --strip-components=1 -C "$work"
 cd "$work"
 patch --batch --fuzz=0 -p1 < "$root/patches/no-configuration-snapshot.patch"
+cp -R "$root/overlay/." .
 export GOBIN="$work/bin"
 export PATH="$GOBIN:$PATH"
 go install github.com/sagernet/gomobile/cmd/gomobile@v0.1.13
