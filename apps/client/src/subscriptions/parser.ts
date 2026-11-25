@@ -111,8 +111,15 @@ function uri(raw: string): Server {
 			decoded.slice(at + 1) +
 			(tag ? "#" + tag : "");
 	}
-	const u = new URL(source),
-		p = protocol(u.protocol.slice(0, -1));
+	// WebView versions differ in their handling of authorities on custom schemes.
+	// Parse the known protocol separately, then use standard HTTPS authority semantics.
+	const parts = /^([a-z][a-z0-9+.-]*):\/\/([^/?#]+)([/?#].*)?$/i.exec(source);
+	if (!parts || /[\s\\]/.test(parts[2])) throw Error();
+	const p = protocol(parts[1].toLowerCase());
+	const u = new URL("https://" + parts[2] + (parts[3] ?? ""));
+	const authority = parts[2].slice(parts[2].lastIndexOf("@") + 1);
+	const explicitPort = /:(\d+)$/.exec(authority)?.[1];
+	if (authority.endsWith(":")) throw Error();
 	if (
 		["vless", "vmess"].includes(p) &&
 		!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(u.username)
@@ -133,7 +140,7 @@ function uri(raw: string): Server {
 	return server(
 		p,
 		u.hostname,
-		u.port ||
+		explicitPort ||
 			(p === "http" ? 80 : p === "https" || p === "hysteria2" ? 443 : 0),
 		decodeURIComponent(u.hash.slice(1)),
 		raw,

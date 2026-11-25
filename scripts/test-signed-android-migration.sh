@@ -15,4 +15,5 @@ for version in 0.1.3 0.2.0; do
   adb shell dumpsys package "$package" > "$RUNNER_TEMP/ploom-package.txt"
   grep -F "versionName=$version" "$RUNNER_TEMP/ploom-package.txt"
   adb shell am start -W -n "$package/.MainActivity" | grep -F 'Status: ok'
+  python3 scripts/check-android-migration-setting.py "$version"
 done
