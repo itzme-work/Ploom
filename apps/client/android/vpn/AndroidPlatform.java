@@ -66,9 +66,13 @@ final class AndroidPlatform implements PlatformInterface {
                 boolean metered = capabilities != null
                         && !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED);
                 listener.updateDefaultInterface(name, iface.getIndex(), metered, false);
+                PloomVpnService.networkType = capabilities == null ? "unknown"
+                        : capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ? "wifi"
+                        : capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ? "cellular" : "other";
                 return;
             }
         } catch (java.net.SocketException ignored) {}
+        PloomVpnService.networkType = "offline";
         service.setUnderlyingNetworks(new Network[0]);
         listener.updateDefaultInterface("", -1, false, false);
     }

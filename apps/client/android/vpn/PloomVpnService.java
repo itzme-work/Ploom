@@ -13,6 +13,7 @@ public final class PloomVpnService extends VpnService implements CommandServerHa
     public static volatile String state = "idle";
     private final java.util.concurrent.ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
     private static volatile long[] snapshot;
+    public static volatile String networkType = "offline";
     private long started, up, down, last;
     public static long[] metrics() { long[] v=snapshot;return v==null?null:v.clone(); }
     @Override public void onCreate(){
@@ -89,6 +90,7 @@ public final class PloomVpnService extends VpnService implements CommandServerHa
             server=null;
         }
         if (platform != null) { try { platform.close(); } catch (Exception ignored) {} platform=null; }
+        networkType = "offline";
     }
     @Override public void onRevoke(){ state="revoked"; stopSelf(); }
     @Override public void onDestroy(){

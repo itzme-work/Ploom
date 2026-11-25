@@ -85,6 +85,7 @@ class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
         try {
             val service=Class.forName(vpnClass)
             result.put("state",service.getField("state").get(null))
+            result.put("network",service.getField("networkType").get(null))
             val usage=service.getMethod("metrics").invoke(null) as? LongArray
             if(usage!=null)result.put("traffic",org.json.JSONArray(usage.toList()))
         } catch (_: ClassNotFoundException) { result.put("state","unavailable") }

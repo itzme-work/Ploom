@@ -112,10 +112,30 @@ try {
       for(const fixture of answers) await exchangeDns(fixture)
       console.log('Android VpnService relayed verified IPv4 and IPv6 DNS datagrams over Shadowsocks.')
     }else{
-      const response=await new Promise((resolve,reject)=>execFile('adb',['shell',`printf '%s\\n' '${nonce}' | toybox nc -w 8 192.0.2.90 18081`],
-        {timeout:12000},(error,stdout)=>error?reject(error):resolve(stdout.trim())))
-      expect(response).toBe('received-'+nonce)
-      expect(traversals).toBe(session)
+      async function challenge(expectedVisits){
+        nonce=randomBytes(24).toString('hex')
+        const response=await new Promise((resolve,reject)=>execFile('adb',['shell',`printf '%s\\n' '${nonce}' | toybox nc -w 8 192.0.2.90 18081`],
+          {timeout:12000},(error,stdout)=>error?reject(error):resolve(stdout.trim())))
+        expect(response).toBe('received-'+nonce)
+        expect(traversals).toBe(expectedVisits)
+      }
+      await challenge(traversals+1)
+      if(session===1){
+        // Reopen UI only to read the physical transport libbox selected. Each
+        // challenge still traverses the OS TUN, independently of this status.
+        shell('am','start','-W','-n',pkg+'/.MainActivity')
+        const physical=()=>page.evaluate(async()=>(await window.__TAURI_INTERNALS__.invoke('tunnel_state')).network)
+        await expect.poll(physical,{timeout:20000}).toBe('wifi')
+        try{
+          shell('svc','wifi','disable')
+          await expect.poll(physical,{timeout:30000}).toBe('cellular')
+          await challenge(traversals+1)
+        }finally{
+          shell('svc','wifi','enable')
+        }
+        await expect.poll(physical,{timeout:30000}).toBe('wifi')
+        await challenge(traversals+1)
+      }
       console.log('Background TCP challenge crossed the installed VpnService and controlled provider.')
     }
     shell('am','start','-W','-n',pkg+'/.MainActivity')
