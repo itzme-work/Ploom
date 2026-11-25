@@ -6,7 +6,7 @@ report_failure() {
     if ((result != 0)); then
         adb logcat -d -s PloomVpn:I '*:S' | tail -60 || true
         adb shell dumpsys activity services work.itzme.ploom | grep -E 'ServiceRecord|isForeground|startRequested' || true
-        adb shell ip -o link show | grep -E 'tun[0-9]+:' || true
+        adb shell dumpsys connectivity | sed -n '/Current Networks:/,/Status for known UIDs:/p' | grep -oE 'InterfaceName: [[:alnum:]_-]+' || true
     fi
     return "$result"
 }

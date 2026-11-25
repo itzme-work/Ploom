@@ -38,3 +38,5 @@
 [Проверка установленного Windows-клиента](https://github.com/itzme-work/Ploom/actions/runs/45584709151/job/139103406326) · [Диагностика Android ELF](https://github.com/itzme-work/Ploom/actions/runs/45584709151/job/139103406645) · [Методика испытаний ядра](connection-engine-0.3.md)
 
 [Android 15 на 4dfbdad](https://github.com/itzme-work/Ploom/actions/runs/45587932904/job/139119959704): пройдены системное согласие, переход в фон, ответ с одноразовым значением и проверка единственного обращения к провайдеру. Тест остановился на ожидании отключения.
+
+[Windows x64, 7cb874a](https://github.com/itzme-work/Ploom/actions/runs/45630497588/job/139262249188): установленная сборка передала уникальные DNS-запросы через Shadowsocks UDP к IPv4 и IPv6 на контролируемом стенде. Проверено восстановление System Proxy после завершения дочернего ядра при замороженном WebView. Эти проверки относятся к режиму прокси. Прозрачный DNS через системный TUN требует отдельного теста.
