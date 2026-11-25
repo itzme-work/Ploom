@@ -89,9 +89,8 @@ try {
   await expect(heading).toBeVisible()
   const port=Number((await heading.innerText()).split(':').at(-1))
   if(process.argv[3]==='tray'){
-    const cmd=`$p=Get-Process -Id ${app.pid}; if (!$p.CloseMainWindow()) { throw 'Close request failed' }`
-    await run('powershell.exe',['-NoProfile','-Command',cmd])
-    await expect.poll(async()=>Number((await run('powershell.exe',['-NoProfile','-Command',`(Get-Process -Id ${app.pid} -ErrorAction Stop).MainWindowHandle.ToInt64()`])).stdout.trim())).toBe(0)
+    const script=fileURLToPath(new URL('../../../scripts/windows/Test-TrayClose.ps1',import.meta.url))
+    await run('powershell.exe',['-NoProfile','-File',script,'-ProcessId',String(app.pid)],{timeout:20000})
   }
   if(datagrams){
     await checkDatagrams(port)
