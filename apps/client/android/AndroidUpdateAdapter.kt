@@ -33,9 +33,10 @@ class BrowserArgs { lateinit var expected: String }
 class InstallArgs { lateinit var expected: String; lateinit var progress: app.tauri.plugin.Channel }
 
 @InvokeArg
-class TunnelArgs { lateinit var config: String }
+class TunnelArgs { lateinit var config: String; var localEndpoint: Boolean = false }
 
-@TauriPlugin(permissions = [app.tauri.annotation.Permission(alias = "vpnNotification", strings = ["android.permission.POST_NOTIFICATIONS"])])
+@TauriPlugin(permissions = [app.tauri.annotation.Permission(alias = "vpnNotification", strings = ["android.permission.POST_NOTIFICATIONS"]),
+    app.tauri.annotation.Permission(alias = "localEndpoint", strings = ["android.permission.ACCESS_LOCAL_NETWORK"])])
 class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
     private fun notificationPermissionMissing() = Build.VERSION.SDK_INT >= 33 &&
         host.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -118,6 +119,19 @@ class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
     fun tunnelStart(invoke: Invoke) {
         try {
             Class.forName(vpnClass)
+            if (invoke.parseArgs(TunnelArgs::class.java).localEndpoint && Build.VERSION.SDK_INT >= 37 &&
+                host.checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK") != PackageManager.PERMISSION_GRANTED) {
+                requestPermissionForAlias("localEndpoint", invoke, "localEndpointResult")
+            } else prepareTunnel(invoke)
+        } catch (_: Exception) { invoke.reject("VPN unavailable") }
+    }
+    @app.tauri.annotation.PermissionCallback
+    fun localEndpointResult(invoke: Invoke) {
+        if (host.checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK") == PackageManager.PERMISSION_GRANTED) prepareTunnel(invoke)
+        else invoke.reject("Local network permission denied")
+    }
+    private fun prepareTunnel(invoke: Invoke) {
+        try {
             val consent = android.net.VpnService.prepare(host)
             if (consent == null) startTunnel(invoke)
             else startActivityForResult(invoke, consent, "vpnConsent")

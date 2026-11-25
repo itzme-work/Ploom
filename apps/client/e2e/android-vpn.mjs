@@ -99,6 +99,12 @@ try {
     for(let i=0;session===1 && i<20;i++){
       shell('uiautomator','dump','/sdcard/ploom-consent.xml')
       const xml=shell('cat','/sdcard/ploom-consent.xml')
+      const lanAllow=(xml.match(/<node\b[^>]+>/g)||[]).find(n=>n.includes('permissioncontroller') && n.includes(':id/permission_allow_button"'))
+      if(lanAllow && Number(shell('getprop','ro.build.version.sdk'))>=37){
+        const [,a,b,c,d]=lanAllow.match(/bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/)
+        shell('input','tap',String((+a + +c)>>1),String((+b + +d)>>1))
+        continue
+      }
       const positive=(xml.match(/<node\b[^>]+>/g)||[]).find(n=>n.includes('com.android.vpndialogs')&&n.includes('android:id/button1'))
       if(positive){
         const [,a,b,c,d]=positive.match(/bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/)
