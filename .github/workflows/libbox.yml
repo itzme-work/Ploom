@@ -1,7 +1,11 @@
 name: Android libbox ARM64
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
 concurrency:
-  group: connection-native-${{ github.workflow }}-${{ github.event_name }}-${{ github.head_ref || github.ref }}
+  group: connection-native-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 permissions:
   contents: read
@@ -36,7 +40,13 @@ jobs:
           export PLOOM_LIBBOX_AAR="$RUNNER_TEMP/deliver/libbox.aar"
           npm run tauri -- android init --ci
           python3 android/prepare.py
-          npm run tauri -- android build --debug --apk --split-per-abi --target aarch64 x86_64
+          for attempt in 1 2 3; do
+            if npm run tauri -- android build --debug --apk --split-per-abi --target aarch64 x86_64 2>&1 | tee "$RUNNER_TEMP/android-build.log"; then
+              break
+            fi
+            if [[ "$attempt" == 3 ]] || ! grep -q "429 from server: Too Many Requests" "$RUNNER_TEMP/android-build.log"; then exit 1; fi
+            sleep "$((attempt * 30))"
+          done
           python ../../scripts/select-vpn-apks.py src-tauri/gen/android/app/build/outputs/apk "$RUNNER_TEMP/deliver"
           python ../../scripts/check-arm64.py "$RUNNER_TEMP/deliver/Ploom-vpn-arm64-debug.apk"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
