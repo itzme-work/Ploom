@@ -38,6 +38,9 @@ async def trial(binary, upstream, port, payload):
         proc = await asyncio.create_subprocess_exec(binary, *args[binary.name], filename, cwd=tmp,
                                                     stdout=asyncio.subprocess.DEVNULL)
         try:
+            # Mihomo opens its inbound before activating its initial rule provider.
+            # Use identical warm-up for all engines; report it as part of startup.
+            await asyncio.sleep(.25)
             while True:
                 if proc.returncode is not None:
                     raise RuntimeError(f"{binary.name} exited: {proc.returncode}")
@@ -49,12 +52,13 @@ async def trial(binary, upstream, port, payload):
             try:
                 writer.write(b"\x05\x01\x00")
                 assert await reader.readexactly(2) == b"\x05\x00"
-                writer.write(b"\x05\x01\x00\x01" + socket.inet_aton(HOST) + struct.pack("!H", port))
+                writer.write(b"\x05\x01\x00\x01" + socket.inet_aton("192.0.2.1") + struct.pack("!H", port))
                 result = await reader.readexactly(4)
                 assert result[:2] == b"\x05\x00"
                 await reader.readexactly({1: 4, 4: 16}[result[3]] + 2)
                 writer.write(b"GET /fixture HTTP/1.0\r\n\r\n")
                 begin = time.monotonic()
+                assert await reader.readuntil(b"\r\n\r\n") == f"HTTP/1.0 200 OK\r\nContent-Length: {SIZE}\r\n\r\n".encode()
                 assert await reader.readexactly(SIZE) == payload
                 end = time.monotonic()
                 status = Path(f"/proc/{proc.pid}/status").read_text()
@@ -79,7 +83,7 @@ async def main(directory):
 
     async def origin(reader, writer):
         await reader.readuntil(b"\r\n\r\n")
-        writer.write(payload)
+        writer.write(f"HTTP/1.0 200 OK\r\nContent-Length: {SIZE}\r\n\r\n".encode() + payload)
         await writer.drain()
         writer.close()
 
@@ -89,7 +93,7 @@ async def main(directory):
         async def proxy(reader, writer):
             nonlocal served
             header = await reader.readuntil(b"\r\n\r\n")
-            if header.splitlines()[0].split()[:2] != [b"CONNECT", f"{HOST}:{port}".encode()]:
+            if header.splitlines()[0].split()[:2] != [b"CONNECT", f"192.0.2.1:{port}".encode()]:
                 writer.close()
                 return
             upstream, outbound = await asyncio.open_connection(HOST, port)

@@ -35,7 +35,7 @@ fn public(ip: IpAddr) -> bool {
         }
     }
 }
-async fn resolve(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
+pub(crate) async fn resolve(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
     let host = host.trim_start_matches('[').trim_end_matches(']');
     if host.is_empty() || host.len() > 253 || port == 0 {
         return Err("address".into());

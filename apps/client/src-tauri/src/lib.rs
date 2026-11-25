@@ -1,5 +1,6 @@
 #[cfg(target_os = "android")]
 mod android;
+mod connection;
 mod subscriptions;
 #[cfg(windows)]
 mod windows;
@@ -14,6 +15,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             subscriptions::library_site,
             android::library_export,
+            android::tunnel_start,
+            android::tunnel_stop,
+            android::tunnel_state,
             android::library_key,
             android::install_update,
             android::cancel_download,

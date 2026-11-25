@@ -20,6 +20,21 @@ jobs:
           python3 scripts/libbox/sbom.py "$RUNNER_TEMP/deliver"
           (cd apps/client && npm sbom --package-lock-only --omit=dev --sbom-format=cyclonedx) > "$RUNNER_TEMP/deliver/frontend.cdx.json"
           git archive --format=tar.gz -o "$RUNNER_TEMP/deliver/ploom-source.tar.gz" HEAD
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - name: Package the compiled bridge and VPN service
+        working-directory: apps/client
+        run: |
+          npm ci
+          rustup target add aarch64-linux-android
+          export NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
+          export PLOOM_LIBBOX_AAR="$RUNNER_TEMP/deliver/libbox.aar"
+          npm run tauri -- android init --ci
+          python3 android/prepare.py
+          npm run tauri -- android build --debug --apk --target aarch64
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*debug.apk' -print -quit)
+          unzip -Z1 "$apk" | grep -Fx 'lib/arm64-v8a/libbox.so'
+          cp "$apk" "$RUNNER_TEMP/deliver/Ploom-vpn-arm64-debug.apk"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: libbox-arm64-source-and-library

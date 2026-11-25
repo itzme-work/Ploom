@@ -14,3 +14,5 @@ unzip -p Xray-linux-64.zip xray > xray
 gzip -dc mihomo-linux-amd64-compatible-v1.19.34.gz > mihomo
 chmod 700 xray mihomo
 python3 "$root/compare.py" "$scratch"
+python3 "$root/protocols.py" "$scratch/sing-box"
+python3 "$root/datagrams.py" "$scratch/sing-box"

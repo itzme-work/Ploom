@@ -63,3 +63,29 @@ pub async fn library_export(
         .await
         .map_err(|_| "Export canceled or failed".into())
 }
+
+#[tauri::command]
+pub async fn tunnel_start(app: tauri::AppHandle, raw: String) -> Result<(), String> {
+    let config = super::connection::tun(super::connection::outbound(&raw).await?);
+    app.state::<PluginHandle<tauri::Wry>>()
+        .run_mobile_plugin_async(
+            "tunnelStart",
+            serde_json::json!({"config":config.to_string()}),
+        )
+        .await
+        .map_err(|_| "permission or startup".into())
+}
+#[tauri::command]
+pub async fn tunnel_stop(app: tauri::AppHandle) -> Result<(), String> {
+    app.state::<PluginHandle<tauri::Wry>>()
+        .run_mobile_plugin_async("tunnelStop", serde_json::json!({}))
+        .await
+        .map_err(|_| "stop".into())
+}
+#[tauri::command]
+pub async fn tunnel_state(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    app.state::<PluginHandle<tauri::Wry>>()
+        .run_mobile_plugin_async("tunnelState", serde_json::json!({}))
+        .await
+        .map_err(|_| "state".into())
+}

@@ -2,6 +2,7 @@
 # Run from the Ploom checkout in a clean Linux builder with Go, JDK 17 and NDK.
 set -euo pipefail
 : "${ANDROID_NDK_HOME:?}" "${ANDROID_HOME:?}"
+root=$(cd "$(dirname "$0")" && pwd)
 dest=$(realpath -m "${1:?output directory}")
 mkdir -p "$dest"
 work=$(mktemp -d)
@@ -12,6 +13,7 @@ curl --fail --location --proto '=https' --proto-redir '=https' "https://codeload
 echo "1c4d2b3bf261a8d98e1b026be0bbcddbcb3f53bbca77eb15e8f25f7d4e602e59  $archive" | sha256sum -c -
 tar -xzf "$archive" --strip-components=1 -C "$work"
 cd "$work"
+patch --batch --fuzz=0 -p1 < "$root/patches/no-configuration-snapshot.patch"
 export GOBIN="$work/bin"
 export PATH="$GOBIN:$PATH"
 go install github.com/sagernet/gomobile/cmd/gomobile@v0.1.13

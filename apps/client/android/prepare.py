@@ -36,3 +36,27 @@ if dependency not in contents:
 
 # android init supplies template launcher resources on each clean build.
 shutil.copytree(root / "src-tauri/icons/android", main / "res", dirs_exist_ok=True)
+
+# The connection build supplies the AAR from its pinned source build in the same job.
+import os
+engine = os.environ.get("PLOOM_LIBBOX_AAR")
+if engine:
+    libs = main.parents[1] / "libs"
+    libs.mkdir(exist_ok=True)
+    shutil.copyfile(engine, libs / "libbox.aar")
+    for source in (root / "android/vpn").glob("*.java"):
+        shutil.copyfile(source, main / "java" / source.name)
+    dep = 'implementation(files("libs/libbox.aar"))'
+    if dep not in gradle.read_text():
+        gradle.write_text(gradle.read_text() + "\ndependencies { " + dep + " }\n")
+    for perm in ("FOREGROUND_SERVICE", "FOREGROUND_SERVICE_SYSTEM_EXEMPTED", "ACCESS_NETWORK_STATE"):
+        name = "android.permission." + perm
+        if not any(node.get(key("name")) == name for node in doc.findall("uses-permission")):
+            ET.SubElement(doc, "uses-permission", {key("name"): name})
+    if not any(node.get(key("name")) == ".PloomVpnService" for node in app.findall("service")):
+        service = ET.SubElement(app, "service", {key("name"): ".PloomVpnService",
+            key("permission"): "android.permission.BIND_VPN_SERVICE", key("exported"): "false",
+            key("foregroundServiceType"): "systemExempted"})
+        ET.SubElement(ET.SubElement(service, "intent-filter"), "action", {key("name"): "android.net.VpnService"})
+        ET.SubElement(service, "meta-data", {key("name"): "android.net.VpnService.SUPPORTS_ALWAYS_ON", key("value"): "false"})
+    tree.write(manifest, encoding="utf-8", xml_declaration=True)

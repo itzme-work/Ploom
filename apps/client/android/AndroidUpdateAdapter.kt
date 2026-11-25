@@ -32,8 +32,45 @@ class BrowserArgs { lateinit var expected: String }
 @InvokeArg
 class InstallArgs { lateinit var expected: String; lateinit var progress: app.tauri.plugin.Channel }
 
+@InvokeArg
+class TunnelArgs { lateinit var config: String }
+
 @TauriPlugin
 class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
+    private val vpnClass = "work.itzme.ploom.PloomVpnService"
+    @Command
+    fun tunnelState(invoke: Invoke) {
+        val result = app.tauri.plugin.JSObject()
+        result.put("state", try { Class.forName(vpnClass).getField("state").get(null) } catch (_: ClassNotFoundException) { "unavailable" })
+        invoke.resolve(result)
+    }
+    @Command
+    fun tunnelStop(invoke: Invoke) {
+        host.stopService(Intent().setClassName(host, vpnClass))
+        invoke.resolve()
+    }
+    @Command
+    fun tunnelStart(invoke: Invoke) {
+        try {
+            Class.forName(vpnClass)
+            val consent = android.net.VpnService.prepare(host)
+            if (consent == null) startTunnel(invoke)
+            else startActivityForResult(invoke, consent, "vpnConsent")
+        } catch (_: Exception) { invoke.reject("VPN unavailable") }
+    }
+    @app.tauri.annotation.ActivityCallback
+    fun vpnConsent(invoke: Invoke,result: androidx.activity.result.ActivityResult) {
+        if (result.resultCode == Activity.RESULT_OK) startTunnel(invoke)
+        else invoke.reject("VPN permission denied")
+    }
+    private fun startTunnel(invoke: Invoke) {
+        try {
+            val intent = Intent().setClassName(host,vpnClass).setAction("start")
+                .putExtra("config",invoke.parseArgs(TunnelArgs::class.java).config)
+            if (Build.VERSION.SDK_INT >= 26) host.startForegroundService(intent) else host.startService(intent)
+            invoke.resolve()
+        } catch (_: Exception) { invoke.reject("VPN service unavailable") }
+    }
     @Command
     fun libraryKey(invoke: Invoke) {
         try {

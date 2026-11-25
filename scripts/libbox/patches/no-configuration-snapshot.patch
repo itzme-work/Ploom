@@ -1,0 +1,16 @@
+--- a/experimental/libbox/log.go
++++ b/experimental/libbox/log.go
+@@ -61,11 +61,8 @@
+ 	return filepath.Join(sBasePath, "configuration.json")
+ }
+ 
+-func saveConfigSnapshot(configContent string) {
+-	snapshotPath := configSnapshotPath()
+-	os.WriteFile(snapshotPath, []byte(configContent), 0o666)
+-	chownReport(snapshotPath)
+-}
++// Ploom modification, 2026-11-25: keep credentials in the encrypted library.
++func saveConfigSnapshot(_ string) {}
+ 
+ func redirectStderr(path string) error {
+ 	crashReportsDir := filepath.Join(sWorkingPath, "crash_reports")
