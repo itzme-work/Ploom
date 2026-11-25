@@ -68,6 +68,14 @@ jobs:
         with: {node-version: 22}
       - run: npm ci
         working-directory: apps/client
+      - name: Prepare the pinned Linux provider for emulator tests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd "$RUNNER_TEMP"
+          gh release download v1.14.4 -R SagerNet/sing-box -p sing-box-1.14.4-linux-amd64.tar.gz
+          grep ' sing-box-1.14.4-linux-amd64.tar.gz$' "$GITHUB_WORKSPACE/scripts/engine-lab/SHA256SUMS" | sha256sum -c -
+          tar xzf sing-box-1.14.4-linux-amd64.tar.gz --strip-components=1 sing-box-1.14.4-linux-amd64/sing-box
       - run: sudo chmod a+rw /dev/kvm
       - uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -77,6 +85,8 @@ jobs:
           script: |
             adb install packages/Ploom-vpn-emulator.apk
             node apps/client/e2e/android-vpn.mjs
+            adb shell pm clear work.itzme.ploom
+            PLOOM_SS_TEST_CORE="$RUNNER_TEMP/sing-box" node apps/client/e2e/android-vpn.mjs
   windows-proxy:
     permissions: {contents: read, actions: read}
     runs-on: windows-2022

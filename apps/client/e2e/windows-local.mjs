@@ -42,7 +42,7 @@ const systemSettings=async()=>JSON.parse((await run("powershell.exe",["-NoProfil
 ])).stdout)
 const baseline=system?await systemSettings():null
 const exe=process.argv[2]
-const datagrams=process.argv[3]==='datagrams'?await startShadowsocks(exe,host):null
+const datagrams=process.argv[3]==='datagrams'?await startShadowsocks(join(dirname(exe),'engine','sing-box.exe'),host):null
 let reality, fixture
 if(process.argv[3]==='reality'){
   const script=fileURLToPath(new URL('../../../scripts/engine-lab/reality-provider.py',import.meta.url))

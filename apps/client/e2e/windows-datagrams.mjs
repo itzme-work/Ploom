@@ -5,11 +5,10 @@ import { randomBytes } from 'node:crypto'
 import { createSocket } from 'node:dgram'
 import { once } from 'node:events'
 import { createServer, createConnection } from 'node:net'
-import { join, dirname } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { finished } from 'node:stream/promises'
 
-export async function startShadowsocks(executable, host) {
+export async function startShadowsocks(core, host, clientHost=host, rules=[]) {
   const reservation=createServer()
   reservation.listen(0,host)
   await once(reservation,'listening')
@@ -17,8 +16,8 @@ export async function startShadowsocks(executable, host) {
   await new Promise(resolve=>reservation.close(resolve))
   const password=randomBytes(24).toString('hex')
   const method='aes-256-gcm'
-  const proc=spawn(join(dirname(executable),'engine','sing-box.exe'),['run','-c','stdin'],{stdio:['pipe','ignore','inherit']})
-  proc.stdin.end(JSON.stringify({log:{disabled:true},inbounds:[{type:'shadowsocks',listen:host,listen_port:port,method,password}],outbounds:[{type:'direct'}]}))
+  const proc=spawn(core,['run','-c','stdin'],{stdio:['pipe','ignore','inherit']})
+  proc.stdin.end(JSON.stringify({log:{disabled:true},inbounds:[{type:'shadowsocks',listen:host,listen_port:port,method,password}],outbounds:[{type:'direct',tag:'target'}],route:{rules}}))
   await finished(proc.stdin)
   for(let i=0;i<80;i++){
     if(proc.exitCode!==null) throw Error('Shadowsocks fixture exited')
@@ -26,7 +25,7 @@ export async function startShadowsocks(executable, host) {
       const socket=createConnection(port,host,()=>{socket.destroy();resolve(true)})
       socket.on('error',()=>resolve(false))
     })
-    if(ready) return {uri:'ss://'+Buffer.from(method+':'+password).toString('base64url')+'@'+host+':'+port+'#Datagram-fixture',close:()=>proc.kill()}
+    if(ready) return {uri:'ss://'+Buffer.from(method+':'+password).toString('base64url')+'@'+clientHost+':'+port+'#Datagram-fixture',close:()=>proc.kill()}
     await delay(100)
   }
   proc.kill()
