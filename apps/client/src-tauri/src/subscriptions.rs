@@ -257,3 +257,15 @@ mod transport_tests {
         task.abort();
     }
 }
+
+#[tauri::command]
+pub async fn subscription_dns(host: String, seconds: u64) -> Result<usize, String> {
+    let _permit = REQUESTS.try_acquire().map_err(|_| "busy")?;
+    timeout(
+        Duration::from_secs(seconds.clamp(1, 15)),
+        resolve(&host, 443),
+    )
+    .await
+    .map_err(|_| "timeout")?
+    .map(|ips| ips.len())
+}

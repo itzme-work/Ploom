@@ -16,6 +16,7 @@ pub fn run() {
             android::cancel_download,
             android::open_update_browser,
             subscriptions::subscription_fetch,
+            subscriptions::subscription_dns,
             subscriptions::subscription_probe
         ]);
     #[cfg(windows)]
@@ -25,6 +26,7 @@ pub fn run() {
             windows::library_key,
             windows::install_update,
             subscriptions::subscription_fetch,
+            subscriptions::subscription_dns,
             subscriptions::subscription_probe
         ])
         .plugin(tauri_plugin_updater::Builder::new().build());

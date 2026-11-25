@@ -1,3 +1,4 @@
+import { raster } from "./image";
 import { useConfirmation } from "./confirm";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
@@ -198,14 +199,10 @@ export function Subscriptions({
 								if (f)
 									void run(async () => {
 										if (f.size > MAX_BYTES) throw Error();
-										const content = f.type.startsWith("image/")
-											? await qr(f)
-											: await f.text();
+										const image = raster(new Uint8Array(await f.arrayBuffer()));
+										const content = image ? await qr(f) : await f.text();
 										clear();
-										if (
-											f.type.startsWith("image/") &&
-											/^https:\/\/\S+$/.test(content.trim())
-										) {
+										if (image && /^https:\/\/\S+$/.test(content.trim())) {
 											setUrl(content.trim());
 											setText("");
 										} else {
@@ -578,6 +575,10 @@ export function Servers({ ru }: Props) {
 	const [checked, mark] = useState<Set<string>>(new Set());
 	const labels: Record<string, string> = {
 		unknown: t("Не проверен", "Untested"),
+		"dns-only": t(
+			"DNS разрешён; TCP неприменим",
+			"DNS resolved; TCP not applicable",
+		),
 		tcp: t("TCP доступен", "TCP reachable"),
 		unsupported: t("TCP неприменим", "TCP not applicable"),
 		"error-tcp": t("Ошибка TCP", "TCP failed"),
@@ -677,6 +678,16 @@ export function Servers({ ru }: Props) {
 									? "error-" + String(err)
 									: "error";
 							}
+						if (udp(e)) {
+							try {
+								await invoke("subscription_dns", { host: e.host, seconds });
+								result = "dns-only";
+							} catch (err) {
+								result = ["address", "dns", "timeout"].includes(String(err))
+									? "error-" + String(err)
+									: "error";
+							}
+						}
 						results.set(e.id, { at: Date.now(), result, ms });
 						status(++done + " / " + items.length);
 					}
@@ -761,6 +772,7 @@ export function Servers({ ru }: Props) {
 							"unknown",
 							"tcp",
 							"unsupported",
+							"dns-only",
 							"error-tcp",
 							"error-dns",
 							"error-timeout",

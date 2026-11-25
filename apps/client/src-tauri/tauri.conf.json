@@ -28,7 +28,7 @@
             "allow-library-key",
             "allow-install-update",
             "allow-subscription-fetch",
-            "allow-subscription-probe",
+            "allow-subscription-dns","allow-subscription-probe",
             "deep-link:allow-get-current",
             "core:event:allow-listen",
             "core:event:allow-unlisten",

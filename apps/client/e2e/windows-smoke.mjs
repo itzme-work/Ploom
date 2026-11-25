@@ -1,3 +1,4 @@
+import {libraryFixture} from './native-library.mjs'
 // CI-only WebView2 diagnostics. Exercise the packaged executable without Vite.
 import {chromium} from 'playwright'
 import {expect} from '@playwright/test'
@@ -25,5 +26,8 @@ try {
  },[command,args])
  expect(await invokeFailure('install_update',{channel:'Stable',expected:'0.1.1-test',progress:'__CHANNEL__:10'})).toContain('Release signing is not configured')
  expect(await invokeFailure('plugin:updater|check',{})).toMatch(/not allowed|denied/i)
+ await libraryFixture(page,true)
+ await page.reload()
+ await libraryFixture(page,false)
  await browser.close()
 }finally{child.kill()}

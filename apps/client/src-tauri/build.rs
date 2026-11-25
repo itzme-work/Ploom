@@ -7,6 +7,7 @@ fn main() {
         "library_key",
         "library_export",
         "subscription_fetch",
+        "subscription_dns",
         "subscription_probe",
         "cancel_download",
         "open_update_browser",
