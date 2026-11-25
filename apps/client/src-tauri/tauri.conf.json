@@ -17,7 +17,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' https://api.github.com ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; img-src 'self' data:",
+      "csp": "default-src 'self'; worker-src 'self' blob:; connect-src 'self' https://api.github.com ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; img-src 'self' data:",
       "capabilities": [
         {
           "identifier": "main-local",
@@ -29,10 +29,10 @@
             "allow-install-update",
             "allow-subscription-fetch",
             "allow-subscription-dns","allow-subscription-probe",
-            "deep-link:allow-get-current",
+            "deep-link:allow-get-current","clipboard-manager:allow-read-text","clipboard-manager:allow-write-text",
             "core:event:allow-listen",
             "core:event:allow-unlisten",
-            "allow-library-export"
+            "allow-library-export","allow-library-site"
           ]
         },
         {

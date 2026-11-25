@@ -74,6 +74,16 @@ class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
     }
 
     @Command
+    fun openProvider(invoke: Invoke) {
+        try {
+            val uri=Uri.parse(invoke.parseArgs(BrowserArgs::class.java).expected)
+            require(uri.scheme=="https" && uri.host!=null && uri.userInfo==null)
+            host.startActivity(Intent(Intent.ACTION_VIEW,uri).addCategory(Intent.CATEGORY_BROWSABLE))
+            invoke.resolve()
+        } catch(e:Exception){invoke.reject("Browser unavailable")}
+    }
+
+    @Command
     fun openBrowser(invoke: Invoke) {
         try {
             val url = asset(invoke.parseArgs(BrowserArgs::class.java).expected)

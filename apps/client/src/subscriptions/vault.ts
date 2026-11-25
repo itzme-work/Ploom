@@ -1,3 +1,4 @@
+import LibraryWorker from "./vault-worker.ts?worker&inline";
 import { empty, type Library } from "./library";
 import type { Box } from "./crypto";
 function crypt<T>(
@@ -6,9 +7,7 @@ function crypt<T>(
 	password: string,
 ): Promise<T> {
 	return new Promise((ok, no) => {
-		const worker = new Worker(new URL("./vault-worker.ts", import.meta.url), {
-			type: "module",
-		});
+		const worker = new LibraryWorker();
 		worker.onerror = () => {
 			worker.terminate();
 			no(Error("storage"));

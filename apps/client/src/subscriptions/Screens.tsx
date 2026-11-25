@@ -1,3 +1,5 @@
+import {readText,writeText} from '@tauri-apps/plugin-clipboard-manager'
+import { openSite } from "./site";
 import { raster } from "./image";
 import { useConfirmation } from "./confirm";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -85,7 +87,13 @@ export function Subscriptions({
 		status("");
 		try {
 			await f();
-		} catch {
+		} catch (error) {
+			if (String(error) === "Error: duplicate") {
+				status(
+					t("Эта подписка уже добавлена", "This subscription already exists"),
+				);
+				return;
+			}
 			status(
 				t(
 					"Операция не выполнена. Проверьте источник, пароль или доступную память.",
@@ -109,7 +117,18 @@ export function Subscriptions({
 		setFeed(f);
 		select(new Set(p.servers.map((_, i) => i)));
 		more(100);
-		if (!name) setName(f?.title || (remote ? new URL(remote).hostname : ""));
+		let title = f?.title?.trim();
+		if (title?.startsWith("base64:")) {
+			try {
+				title = new TextDecoder("utf-8", { fatal: true }).decode(
+					Uint8Array.from(atob(title.slice(7)), (c) => c.charCodeAt(0)),
+				);
+			} catch {
+				title = "";
+			}
+		}
+		if (!name)
+			setName(title?.slice(0, 256) || (remote ? new URL(remote).hostname : ""));
 	};
 	const clear = () => {
 		setPreview(undefined);
@@ -165,6 +184,7 @@ export function Subscriptions({
 					<label>
 						{t("Конфигурации", "Configurations")}
 						<textarea
+                            aria-label={t("Конфигурации","Configurations")}
 							spellCheck={false}
 							value={text}
 							onChange={(e) => {
@@ -177,7 +197,7 @@ export function Subscriptions({
 					<button
 						onClick={() =>
 							run(async () => {
-								const content = await navigator.clipboard.readText();
+								const content = await (isTauri()?readText():navigator.clipboard.readText());
 								clear();
 								if (/^https:\/\/\S+$/.test(content.trim()))
 									setUrl(content.trim());
@@ -269,7 +289,10 @@ export function Subscriptions({
 											[],
 											preview.servers.filter((_, i) => selected.has(i)),
 										);
-										await change((d) =>
+										await change((d) => {
+											if (url && d.subscriptions.some((s) => s.url === url))
+												throw Error("duplicate");
+
 											d.subscriptions.push({
 												id: crypto.randomUUID(),
 												entries,
@@ -282,8 +305,8 @@ export function Subscriptions({
 												updated: Date.now(),
 												traffic: feed?.traffic ?? "",
 												site: feed?.site ?? "",
-											}),
-										);
+											});
+										});
 										clear();
 										setUrl("");
 										setText("");
@@ -459,7 +482,7 @@ export function Subscriptions({
 														),
 													)
 												)
-													await navigator.clipboard.writeText(s.url);
+													await (isTauri()?writeText(s.url):navigator.clipboard.writeText(s.url));
 											})
 										}
 									>
@@ -467,9 +490,26 @@ export function Subscriptions({
 									</button>
 								)}
 								{/^https:\/\//i.test(s.site) && (
-									<a href={s.site} target="_blank" rel="noreferrer">
+									<button
+										onClick={() =>
+											run(async () => {
+												const address = new URL(s.site);
+												if (
+													await ask(
+														t(
+															"Открыть сайт провайдера?",
+															"Open provider website?",
+														) +
+															" " +
+															address.hostname,
+													)
+												)
+													await openSite(address.href);
+											})
+										}
+									>
 										{t("Сайт провайдера", "Provider website")}
-									</a>
+									</button>
 								)}
 								<button
 									onClick={() =>
@@ -976,7 +1016,7 @@ export function Servers({ ru }: Props) {
 											),
 										)
 									)
-										await navigator.clipboard.writeText(e.raw);
+										await (isTauri()?writeText(e.raw):navigator.clipboard.writeText(e.raw));
 								})
 							}
 						>

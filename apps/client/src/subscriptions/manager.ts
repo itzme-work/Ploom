@@ -1,3 +1,4 @@
+import LibraryWorker from "./worker.ts?worker&inline";
 import { create } from "zustand";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { empty, reconcile, type Library, type Subscription } from "./library";
@@ -40,9 +41,7 @@ export function change(fn: (data: Library) => void) {
 }
 export function parse(text: string): Promise<Preview> {
 	return new Promise((ok, no) => {
-		const worker = new Worker(new URL("./worker.ts", import.meta.url), {
-			type: "module",
-		});
+		const worker = new LibraryWorker();
 		const timer = setTimeout(() => {
 			worker.terminate();
 			no(Error("limit"));

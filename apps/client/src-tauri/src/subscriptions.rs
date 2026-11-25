@@ -269,3 +269,44 @@ pub async fn subscription_dns(host: String, seconds: u64) -> Result<usize, Strin
     .map_err(|_| "timeout")?
     .map(|ips| ips.len())
 }
+
+#[tauri::command]
+pub async fn library_site(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    let url = Url::parse(&url).map_err(|_| "url")?;
+    if url.scheme() != "https"
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return Err("url".into());
+    }
+    #[cfg(target_os = "android")]
+    {
+        use tauri::{plugin::PluginHandle, Manager};
+        return app
+            .state::<PluginHandle<tauri::Wry>>()
+            .run_mobile_plugin_async("openProvider", serde_json::json!({"expected":url.as_str()}))
+            .await
+            .map_err(|_| "Browser unavailable".into());
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::Shell::ShellExecuteW;
+        let text: Vec<u16> = url.as_str().encode_utf16().chain(Some(0)).collect();
+        let status = unsafe {
+            ShellExecuteW(
+                std::ptr::null_mut(),
+                std::ptr::null(),
+                text.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                1,
+            )
+        } as isize;
+        if status <= 32 {
+            return Err("Browser unavailable".into());
+        }
+    }
+    let _ = app;
+    Ok(())
+}

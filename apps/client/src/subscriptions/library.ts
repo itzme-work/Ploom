@@ -31,24 +31,50 @@ export const empty = (): Library => ({
 });
 export function reconcile(old: Entry[], incoming: Server[]): Entry[] {
 	const raw = new Map(old.map((s) => [s.raw, s]));
-	const endpoint = (s: Server) =>
-		JSON.stringify([s.protocol, s.host, s.port, s.name]);
-	const matches = new Map<string, Entry | null>(),
-		counts = new Map<string, number>();
-	for (const s of old) {
-		const k = endpoint(s);
-		matches.set(k, matches.has(k) ? null : s);
+	const used = new Set<string>(),
+		matched: (Entry | undefined)[] = incoming.map((s) => {
+			const entry = raw.get(s.raw);
+			if (entry) used.add(entry.id);
+			return entry;
+		});
+	// A provider may rotate an endpoint or rename a node. Match remaining records only one-to-one.
+	for (const signature of [
+		(s: Server) => [s.protocol, s.host, s.port],
+		(s: Server) => [s.protocol, s.name],
+	]) {
+		const choices = new Map<string, Entry | null>(),
+			counts = new Map<string, number>();
+		for (const e of old) {
+			if (used.has(e.id)) continue;
+			const k = JSON.stringify(signature(e));
+			choices.set(k, choices.has(k) ? null : e);
+		}
+		for (let i = 0; i < incoming.length; i++) {
+			if (matched[i]) continue;
+			const k = JSON.stringify(signature(incoming[i]));
+			counts.set(k, (counts.get(k) ?? 0) + 1);
+		}
+		for (let i = 0; i < incoming.length; i++) {
+			if (matched[i]) continue;
+			const k = JSON.stringify(signature(incoming[i])),
+				entry = choices.get(k);
+			if (entry && counts.get(k) === 1) {
+				matched[i] = entry;
+				used.add(entry.id);
+			}
+		}
 	}
-	for (const s of incoming) {
-		const k = endpoint(s);
-		counts.set(k, (counts.get(k) ?? 0) + 1);
-	}
-	const merged: Entry[] = incoming.map((s) => {
-		const k = endpoint(s),
-			prev = raw.get(s.raw) ?? (counts.get(k) === 1 ? matches.get(k) : null);
+	const merged: Entry[] = incoming.map((s, i) => {
+		const prev = matched[i];
 		return {
 			...(prev ?? { id: crypto.randomUUID(), added: Date.now() }),
 			...s,
+			diagnosis:
+				prev?.host === s.host &&
+				prev.port === s.port &&
+				prev.transport === s.transport
+					? prev.diagnosis
+					: undefined,
 		};
 	});
 	return old.some((e) => e.rank !== undefined)

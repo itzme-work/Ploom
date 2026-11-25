@@ -93,7 +93,7 @@ function server(
 function uri(raw: string): Server {
 	if (raw.length > 65536) throw Error();
 	if (raw.startsWith("vmess://") && !raw.slice(8).includes("@")) {
-		const v = obj(JSON.parse(decode(raw.slice(8))));
+		const v = obj(boundedJson(decode(raw.slice(8))));
 		if (!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(str(v.id)))
 			throw Error();
 		return server("vmess", v.add, v.port, v.ps, raw, str(v.net), str(v.tls));
@@ -292,12 +292,46 @@ export function parseSubscription(text: string, allowBundle = true): Preview {
 				].includes(p)
 			)
 				continue;
+			if (p === "wireguard" && Array.isArray(settings.peers ?? v.peers)) {
+				const peers = (settings.peers ?? v.peers) as unknown[];
+				for (const peer of peers)
+					add(() => {
+						const item = obj(peer);
+						if (!str(item.publicKey ?? item.public_key))
+							throw Error("wireguard");
+						const addr = item.endpoint
+							? new URL("tcp://" + str(item.endpoint))
+							: undefined;
+						return server(
+							p,
+							addr?.hostname ?? item.address,
+							addr?.port ?? item.port,
+							v.tag ?? v.name,
+							JSON.stringify(
+								settings.peers
+									? { ...v, settings: { ...settings, peers: [peer] } }
+									: { ...v, peers: [peer] },
+							),
+						);
+					});
+				continue;
+			}
 			const endpoints = settings.vnext ?? settings.servers;
 			const list = Array.isArray(endpoints) ? endpoints : [v];
 			for (const ep of list)
 				add(() => {
 					const e = obj(ep),
 						stream = obj(v.streamSettings);
+					const users = Array.isArray(e.users) ? e.users.map(obj) : [];
+					if (
+						(p === "vless" || p === "vmess") &&
+						!str(e.uuid ?? e.id) &&
+						!users.some((u) => str(u.id))
+					)
+						throw Error("credential");
+					if ((p === "trojan" || p === "ss") && !str(e.password))
+						throw Error("credential");
+					if (p === "ss" && !str(e.method ?? e.cipher)) throw Error("method");
 					return server(
 						p,
 						e.address ?? e.server,

@@ -6,6 +6,7 @@ fn main() {
         "install_update",
         "library_key",
         "library_export",
+        "library_site",
         "subscription_fetch",
         "subscription_dns",
         "subscription_probe",

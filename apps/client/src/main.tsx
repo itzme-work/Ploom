@@ -183,7 +183,9 @@ function App() {
 					})}
 				</nav>
 			</aside>
-			<article>
+			<article
+				className={page === 1 || page === 2 ? "library-layout" : undefined}
+			>
 				<h1>{pages[page]}</h1>
 				{page === 0 ? (
 					<>

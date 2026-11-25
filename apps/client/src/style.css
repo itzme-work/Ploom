@@ -8,3 +8,11 @@
   h1{font-size:clamp(1.5em,8vw,2em)}
 }
 fieldset{min-width:0;border:0;margin:0;padding:0}textarea{font:inherit;color:inherit;background:Canvas;border:1px solid GrayText;border-radius:.6em;min-height:5em;padding:.6em}section :is(input,select,textarea){min-width:0;max-width:100%}section h2,section p,output{overflow-wrap:anywhere}section details{margin-block:.6em}section button{margin:.15em}section label{flex-wrap:wrap}section textarea{width:100%}
+dialog{max-width:min(28rem,90vw);color:CanvasText;background:Canvas;border:1px solid GrayText;border-radius:1em;padding:1.25em}
+dialog::backdrop{background:#0008}
+[data-style=ASCII] dialog{border:2px dashed currentColor;border-radius:0}
+@media(min-width:1000px) and (orientation:landscape){
+ .library-layout{display:grid;width:min(100%,78em);min-width:0;grid-template-columns:repeat(2,minmax(0,1fr));gap:1em;align-content:start;align-items:start}
+ .library-layout>h1,.library-layout>section:first-of-type{grid-column:1/-1}
+ .library-layout>section{margin-bottom:0}
+}
