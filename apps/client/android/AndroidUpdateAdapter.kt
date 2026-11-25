@@ -37,6 +37,16 @@ class TunnelArgs { lateinit var config: String }
 
 @TauriPlugin
 class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
+    @Command
+    fun scanQr(invoke: Invoke) {
+        startActivityForResult(invoke,Intent(host,QrScannerActivity::class.java),"qrResult")
+    }
+    @app.tauri.annotation.ActivityCallback
+    fun qrResult(invoke: Invoke,result: androidx.activity.result.ActivityResult) {
+        val response=app.tauri.plugin.JSObject()
+        response.put("text",if(result.resultCode==Activity.RESULT_OK)result.data?.getStringExtra("qr") else "")
+        invoke.resolve(response)
+    }
     private val vpnClass = "work.itzme.ploom.PloomVpnService"
     @Command
     fun tunnelState(invoke: Invoke) {

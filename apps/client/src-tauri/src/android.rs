@@ -93,3 +93,11 @@ pub async fn tunnel_state(app: tauri::AppHandle) -> Result<serde_json::Value, St
         .await
         .map_err(|_| "state".into())
 }
+
+#[tauri::command]
+pub async fn scan_qr(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    app.state::<PluginHandle<tauri::Wry>>()
+        .run_mobile_plugin_async("scanQr", serde_json::json!({}))
+        .await
+        .map_err(|_| "camera".into())
+}

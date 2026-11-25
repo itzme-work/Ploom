@@ -5,7 +5,7 @@ import xml.etree.ElementTree as ET
 
 root = Path(__file__).resolve().parents[1]
 main = root / "src-tauri/gen/android/app/src/main"
-for source in ("AndroidUpdateAdapter.kt", "ApkDownload.java", "LibraryKey.kt"):
+for source in ("AndroidUpdateAdapter.kt", "ApkDownload.java", "LibraryKey.kt", "QrScannerActivity.kt"):
     shutil.copyfile(root / "android" / source, main / "java" / source)
 android = "http://schemas.android.com/apk/res/android"
 ET.register_namespace("android", android)
@@ -16,7 +16,14 @@ doc = tree.getroot()
 permission = "android.permission.REQUEST_INSTALL_PACKAGES"
 if not any(node.get(key("name")) == permission for node in doc.findall("uses-permission")):
     ET.SubElement(doc, "uses-permission", {key("name"): permission})
+if not any(node.get(key("name")) == "android.permission.CAMERA" for node in doc.findall("uses-permission")):
+    ET.SubElement(doc,"uses-permission",{key("name"):"android.permission.CAMERA"})
+for feature in ["android.hardware.camera","android.hardware.camera.autofocus"]:
+    if not any(node.get(key("name")) == feature for node in doc.findall("uses-feature")):
+        ET.SubElement(doc,"uses-feature",{key("name"):feature,key("required"):"false"})
 app = doc.find("application")
+if not any(node.get(key("name")) == ".QrScannerActivity" for node in app.findall("activity")):
+    ET.SubElement(app,"activity",{key("name"):".QrScannerActivity",key("exported"):"false"})
 provider = next((node for node in app.findall("provider") if node.get(key("authorities")) == "${applicationId}.updates"), None)
 if provider is None:
     provider = ET.SubElement(app, "provider", {key("authorities"): "${applicationId}.updates"})
@@ -65,3 +72,9 @@ if engine:
     for source in (root.parents[1] / "LICENSES").glob("*.txt"):
         shutil.copyfile(source, licenses / source.name)
     shutil.copyfile(root.parents[1] / "NOTICE", licenses / "NOTICE")
+
+
+for module in ["androidx.camera:camera-camera2:1.4.2","androidx.camera:camera-lifecycle:1.4.2","androidx.camera:camera-view:1.4.2","com.google.zxing:core:3.5.3"]:
+    dep = f'implementation("{module}")'
+    if dep not in gradle.read_text():
+        gradle.write_text(gradle.read_text() + "\ndependencies { " + dep + " }\n")

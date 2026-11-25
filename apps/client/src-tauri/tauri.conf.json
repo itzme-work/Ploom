@@ -46,7 +46,7 @@
           ],
           "permissions": [
             "allow-cancel-download",
-            "allow-tunnel-start", "allow-tunnel-stop", "allow-tunnel-state",
+            "allow-scan-qr","allow-tunnel-start", "allow-tunnel-stop", "allow-tunnel-state",
             "allow-open-update-browser"
           ]
         }

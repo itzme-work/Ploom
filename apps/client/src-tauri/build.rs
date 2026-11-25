@@ -5,6 +5,7 @@ fn main() {
     let manifest = tauri_build::AppManifest::new().commands(&[
         "install_update",
         "library_key",
+        "scan_qr",
         "library_export",
         "tunnel_start",
         "proxy_start",

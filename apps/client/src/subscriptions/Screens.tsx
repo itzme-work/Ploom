@@ -212,7 +212,14 @@ export function Subscriptions({
 					>
 						{t("Вставить", "Paste")}
 					</button>
-					<label>
+					{isTauri() && /Android/.test(navigator.userAgent) && <button onClick={()=>run(async()=>{
+                        const {text:code}=await invoke<{text:string}>("scan_qr");
+                        if (!code) return;
+                        clear();
+                        if (/^https:\/\/\S+$/.test(code.trim())) { setText("");setUrl(code.trim()); }
+                        else {setUrl("");setText(code);}
+                    })}>{t("Сканировать камерой","Scan with camera")}</button>}
+                    <label>
 						{t("Файл или изображение QR", "File or QR image")}
 						<input
 							type="file"
