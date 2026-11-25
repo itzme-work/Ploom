@@ -52,3 +52,15 @@ it('preserves the last full profile when the provider changes format',async()=>{
  await expect(refresh(current)).rejects.toThrow('profile format changed')
  expect(useLibrary.getState().data.subscriptions[0].profile).toEqual(current.profile)
 })
+it('recovers discarded server edits only when the exact configuration returns',async()=>{
+ const first=sub.entries[0]
+ request.mockResolvedValue({text:'http://temporary.example.invalid:80',traffic:'',site:'',title:''})
+ await refresh(sub)
+ let source=useLibrary.getState().data.subscriptions[0]
+ expect(source.removed?.[0].entry.id).toBe(first.id)
+ request.mockResolvedValue({text:previous,traffic:'',site:'',title:''})
+ await refresh(source)
+ source=useLibrary.getState().data.subscriptions[0]
+ expect(source.entries[0]).toMatchObject({id:first.id,favorite:true,alias:'My node'})
+ expect(source.removed).toEqual([])
+})

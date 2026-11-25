@@ -86,7 +86,20 @@ export async function open(box: Box, password: string): Promise<Library> {
 			throw Error("format");
 		if (identifiers.has(s.id)) throw Error("duplicate");
 		identifiers.add(s.id);
-		for (const e of s.entries) {
+		if (
+			s.removed !== undefined &&
+			(!Array.isArray(s.removed) ||
+				s.removed.length > 250 ||
+				s.removed.some(
+					(r: { at: number; entry: unknown }) =>
+						!r || !Number.isFinite(r.at) || !r.entry,
+				))
+		)
+			throw Error("format");
+		for (const e of [
+			...s.entries,
+			...(s.removed ?? []).map((r: { entry: unknown }) => r.entry),
+		]) {
 			if (
 				!e ||
 				[

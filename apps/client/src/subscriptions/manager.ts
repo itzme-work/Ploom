@@ -1,7 +1,12 @@
 import LibraryWorker from "./worker.ts?worker&inline";
 import { create } from "zustand";
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { empty, reconcile, type Library, type Subscription } from "./library";
+import {
+	empty,
+	refreshEntries,
+	type Library,
+	type Subscription,
+} from "./library";
 import { load, save } from "./vault";
 import type { Preview } from "./parser";
 export const useLibrary = create<{
@@ -101,7 +106,7 @@ export async function refresh(s: Subscription) {
 			if (sub.profile)
 				sub.profile = { format: preview.format, source: feed.text };
 			Object.assign(sub, {
-				entries: reconcile(sub.entries, preview.servers),
+				...refreshEntries(sub, preview.servers),
 				etag: feed.etag,
 				modified: feed.modified,
 				traffic: feed.traffic,

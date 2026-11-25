@@ -14,6 +14,7 @@ export type Subscription = {
 	name: string;
 	url: string;
 	entries: Entry[];
+	removed?: { entry: Entry; at: number }[];
 	enabled: boolean;
 	interval: number;
 	updated: number;
@@ -101,5 +102,55 @@ export function usage(line: string) {
 				? Math.max(0, out.total - used)
 				: undefined,
 		expire: out.expire,
+	};
+}
+
+// Only exact original configurations can reclaim edits from an absent server.
+export function refreshEntries(
+	sub: Subscription,
+	incoming: Server[],
+	now = Date.now(),
+) {
+	const rows = reconcile(sub.entries, incoming);
+	const activeIds = new Set(sub.entries.map((e) => e.id));
+	const currentIds = new Set(rows.map((e) => e.id));
+	const archive = new Map(
+		(sub.removed ?? [])
+			.filter((r) => r.at >= now - 30 * 86400000)
+			.map((r) => [r.entry.raw, r]),
+	);
+	for (const old of sub.entries) {
+		if (
+			!currentIds.has(old.id) &&
+			(old.alias ||
+				old.favorite ||
+				old.hidden ||
+				old.note ||
+				old.rank !== undefined)
+		)
+			archive.set(old.raw, { entry: old, at: now });
+	}
+	for (const row of rows) {
+		const prior = archive.get(row.raw);
+		if (prior && !activeIds.has(row.id) && !currentIds.has(prior.entry.id)) {
+			const history = prior.entry;
+			Object.assign(row, {
+				id: history.id,
+				added: history.added,
+				alias: history.alias,
+				note: history.note,
+				favorite: history.favorite,
+				hidden: history.hidden,
+				rank: history.rank,
+			});
+			currentIds.add(history.id);
+		}
+		archive.delete(row.raw);
+	}
+	if (rows.some((e) => e.rank !== undefined))
+		rows.sort((a, b) => (a.rank ?? Infinity) - (b.rank ?? Infinity));
+	return {
+		entries: rows,
+		removed: [...archive.values()].sort((a, b) => b.at - a.at).slice(0, 250),
 	};
 }
