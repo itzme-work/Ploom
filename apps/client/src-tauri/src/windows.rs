@@ -15,6 +15,9 @@ pub async fn install_update(
     {
         return Err("Invalid release channel or version".into());
     }
+    if version.cmp_precedence(&app.package_info().version) != std::cmp::Ordering::Greater {
+        return Err("Update must be newer than the installed version".into());
+    }
     let release_path = format!("/itzme-work/Ploom/releases/download/v{version}");
     let endpoint = format!("https://github.com{release_path}/latest.json");
     let updater = app
@@ -31,9 +34,7 @@ pub async fn install_update(
         .ok_or("No update available")?;
     require_signature(&update.signature)?;
     if update.version != expected
-        || update.download_url.scheme() != "https"
-        || update.download_url.host_str() != Some("github.com")
-        || update.download_url.path() != format!("{release_path}/Ploom.exe")
+        || update.download_url.as_str() != format!("https://github.com{release_path}/Ploom.exe")
     {
         return Err("Unexpected update metadata".into());
     }
@@ -43,6 +44,9 @@ pub async fn install_update(
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
             if attempt.previous().len() < 5
                 && attempt.url().scheme() == "https"
+                && attempt.url().port_or_known_default() == Some(443)
+                && attempt.url().username().is_empty()
+                && attempt.url().password().is_none()
                 && matches!(
                     attempt.url().host_str(),
                     Some("github.com" | "release-assets.githubusercontent.com")
@@ -71,6 +75,9 @@ pub async fn install_update(
         }
         bytes.extend_from_slice(&chunk);
         let _ = progress.send(("download".into(), bytes.len() as u64, total));
+    }
+    if bytes.is_empty() || total.is_some_and(|length| length != bytes.len() as u64) {
+        return Err("Incomplete update download".into());
     }
     let _ = progress.send(("verify".into(), bytes.len() as u64, total));
     update
