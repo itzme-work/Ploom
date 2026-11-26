@@ -748,15 +748,16 @@ export function Servers({ ru }: Props) {
 		},
 		[],
 	);
-	const all = useMemo(
-		() =>
-			data.subscriptions
-				.filter((s) => s.enabled)
-				.flatMap((sub) =>
-					sub.entries.filter((e) => !e.hidden).map((e) => ({ e, sub })),
-				),
-		[data],
-	);
+	const all = useMemo(() => {
+		const visible: { e: Entry; sub: Subscription }[] = [];
+		for (const sub of data.subscriptions) {
+			if (!sub.enabled) continue;
+			for (const e of sub.entries) {
+				if (!e.hidden) visible.push({ e, sub });
+			}
+		}
+		return visible;
+	}, [data]);
 	const rows = useMemo(() => {
 		const rows = all.filter(
 			({ e, sub }) =>
