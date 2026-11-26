@@ -125,6 +125,16 @@ def main():
         else:
             raise RuntimeError("Missing challenge response through installed VPN")
     control("Disconnect")
+    control("Disconnected", click=False)
+    for _ in range(20):
+        services = adb("shell", "dumpsys", "activity", "services", PACKAGE)
+        links = adb("shell", "ip", "link", "show")
+        if not any("ServiceRecord{" in line and "PloomVpnService" in line
+                   for line in services.splitlines()) and not re.search(r"^\d+: tun\d+:", links, re.M):
+            break
+        time.sleep(0.5)
+    else:
+        raise RuntimeError("Ploom VPN service or TUN survived disconnect")
 
 
 if __name__ == "__main__":

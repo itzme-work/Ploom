@@ -26,3 +26,6 @@ for name, job in jobs.items():
         assert "gh release " not in str(job.get("steps", []))
 assert "|| 'verified-release'" in jobs["verify"]["steps"][-1]["with"]["name"]
 print("Build only and Build hotfix pair are read-only. Publish requires confirmation.")
+for job in ("build", "signed-connection"):
+    assert """inputs.mode == 'Repair Android 0.3.0' && '["ubuntu-latest"]'""" in jobs[job]["strategy"]["matrix"]["os"]
+assert "inputs.mode == 'Repair Android 0.3.0' && inputs.version == '0.3.0'" in jobs["build"]["if"]
