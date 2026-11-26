@@ -55,7 +55,7 @@ jobs:
           ../../scripts/windows/Test-SubscriptionsUpgrade.ps1 "$env:RUNNER_TEMP/baseline/Ploom.exe" $installer
       - name: Launch packaged Ploom in WebView2
         run: node e2e/windows-smoke.mjs
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ploom-windows-x64-debug
           path: apps/client/src-tauri/target/debug/bundle/nsis/*.exe
@@ -85,7 +85,7 @@ jobs:
           python3 ../../scripts/check-arm64.py "$apk"
           unzip -Z1 "$apk" > "$RUNNER_TEMP/ploom-entries"
           grep -Eq '^lib/arm64-v8a/.+\.so$' "$RUNNER_TEMP/ploom-entries"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ploom-android-arm64-debug
           path: apps/client/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
