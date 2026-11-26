@@ -83,30 +83,48 @@ try {
     lines.close()
   }
   shell('am','start','-W','-n',pkg+'/.MainActivity')
+  console.log('Activity started; attaching to debug WebView')
   ;[device]=await android.devices()
-  const page=await (await device.webView({pkg},{timeout:60000})).page()
+  device.setDefaultTimeout(20000)
+  const page=await (await device.webView({pkg,timeout:30000})).page()
   page.setDefaultTimeout(20000)
-  await page.getByRole('button',{name:'Subscriptions',exact:true}).click()
-  await page.getByLabel('Configurations',{exact:true}).fill(reality?.uri ?? shadowsocks?.uri ?? 'http://10.0.2.2:18483#Android-fixture')
-  await page.getByRole('button',{name:'Preview',exact:true}).click()
-  await page.getByRole('button',{name:'Import (1)',exact:true}).click()
-  await page.getByRole('button',{name:'Servers',exact:true}).click()
-  await page.getByRole('button',{name:'Select',exact:true}).click()
-  await expect(page.getByRole('button',{name:'Select',exact:true})).toHaveAttribute('aria-pressed','true')
-  await page.getByRole('button',{name:'Home',exact:true}).click()
-  await expect(page.getByText(reality?/fixture · vless/i:shadowsocks?/fixture · (ss|shadowsocks)/i:/fixture · http/i)).toBeVisible()
+  console.log('WebView attached',await page.evaluate(()=>navigator.userAgent))
+  const button=name=>page.getByRole('button',{name,exact:true,includeHidden:true})
+  // Hit-test each control before sending a real CDP pointer event. Older
+  // Android WebViews predate Element.checkVisibility used by locator.click.
+  async function tap(control){
+    let point
+    await expect.poll(async()=>{
+      point=await control.evaluate(el=>{
+        el.scrollIntoView({block:'center'})
+        const r=el.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2
+        return !el.disabled && r.width && r.height && el.contains(document.elementFromPoint(x,y)) ? {x,y}:null
+      })
+      return Boolean(point)
+    },{timeout:20000}).toBe(true)
+    await page.mouse.click(point.x,point.y)
+  }
+  async function visible(locator){
+    await expect.poll(()=>locator.evaluate(el=>el.getBoundingClientRect().height>0 && getComputedStyle(el).visibility==='visible'),{timeout:20000}).toBe(true)
+  }
+  await tap(button('Subscriptions'))
+  await tap(page.getByLabel('Configurations',{exact:true}))
+  await page.keyboard.insertText(reality?.uri ?? shadowsocks?.uri ?? 'http://10.0.2.2:18483#Android-fixture')
+  await tap(button('Preview'))
+  await tap(button('Import (1)'))
+  await tap(button('Servers'))
+  await tap(button('Select'))
+  await expect(button('Select')).toHaveAttribute('aria-pressed','true')
+  await tap(button('Home'))
+  await visible(page.getByText(reality?/fixture · vless/i:shadowsocks?/fixture · (ss|shadowsocks)/i:/fixture · http/i))
+  console.log('Synthetic configuration imported and selected')
   const initialTunnels=tunnels()
   expect(publicHttp()).toMatch(/^HTTP\/1\.[01] [23]\d\d/)
   for(let session=1;session<=2;session++){
     nonce=randomBytes(24).toString('hex')
-    await page.getByRole('button',{name:'Connect',exact:true}).click()
-    const confirm=page.getByRole('button',{name:'Confirm',exact:true})
-    try {await expect(confirm).toBeVisible({timeout:10000})} catch(error){
-      console.error('Synthetic profile, native state:',await page.evaluate(async()=>{
-        try {return await window.__TAURI_INTERNALS__.invoke('tunnel_state')}catch(e){return String(e)}
-      }),'UI:',await page.locator('main').innerText());throw error
-    }
-    await confirm.click()
+    await tap(button('Connect'))
+    await tap(button('Confirm'))
+    console.log('Endpoint consent accepted for session',session)
     for(let i=0;session===1 && i<20;i++){
       shell('uiautomator','dump','/sdcard/ploom-consent.xml')
       const xml=shell('cat','/sdcard/ploom-consent.xml')
@@ -124,7 +142,7 @@ try {
       }
       await delay(300)
     }
-    await expect(page.getByText('TUN open · connectivity unverified')).toBeVisible({timeout:20000})
+    await visible(page.getByText('TUN open · connectivity unverified'))
     shell('input','keyevent','KEYCODE_HOME')
     // The server runs on this event loop, so the adb request must remain asynchronous.
     expect(tunnels().some(name=>!initialTunnels.includes(name))).toBe(true)
@@ -171,13 +189,16 @@ try {
       console.log('Background TCP challenge crossed the installed VpnService and controlled provider.')
     }
     shell('am','start','-W','-n',pkg+'/.MainActivity')
-    await page.getByRole('button',{name:'Disconnect',exact:true}).click()
-    await expect(page.getByText('Disconnected',{exact:true})).toBeVisible({timeout:20000})
+    await tap(button('Disconnect'))
+    await visible(page.getByText('Disconnected',{exact:true}))
     await expect.poll(tunnels,{timeout:20000}).toEqual(initialTunnels)
     await expect.poll(()=>shell('dumpsys','activity','services',pkg).split('\n').some(line=>line.includes('ServiceRecord{') && line.includes('PloomVpnService')),{timeout:20000}).toBe(false)
     expect(publicHttp()).toMatch(/^HTTP\/1\.[01] [23]\d\d/)
     console.log('Session',session,'closed: TUN and service removed; direct Internet request passed.')
   }
+} catch(error){
+  console.error('Installed scenario failed before cleanup:',error.name,error.message)
+  throw error
 } finally {
   if(device) await device.close()
   realityProcess?.stdin.end()

@@ -100,6 +100,9 @@ jobs:
           PLOOM_EXPECTED_API: ${{ matrix.sdk }}
         with:
           api-level: ${{ matrix.sdk }}
+          ram-size: 3072M
+          cores: 4
+          emulator-boot-timeout: 900
           target: google_apis
           arch: x86_64
           script: bash scripts/engine-lab/android-installed.sh
