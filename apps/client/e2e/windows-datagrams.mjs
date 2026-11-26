@@ -17,7 +17,7 @@ export async function startShadowsocks(core, host, clientHost=host, rules=[]) {
   const password=randomBytes(24).toString('hex')
   const method='aes-256-gcm'
   const proc=spawn(core,['run','-c','stdin'],{stdio:['pipe','ignore','inherit']})
-  proc.stdin.end(JSON.stringify({log:{disabled:true},inbounds:[{type:'shadowsocks',listen:host,listen_port:port,method,password}],outbounds:[{type:'direct',tag:'target'}],route:{rules}}))
+  proc.stdin.end(JSON.stringify({log:{disabled:true},inbounds:[{type:'shadowsocks',listen:host,listen_port:port,method,password}],outbounds:[{type:'direct',tag:'target'}],route:{rules:rules.length ? [...rules,{action:'reject'}] : rules}}))
   await finished(proc.stdin)
   for(let i=0;i<80;i++){
     if(proc.exitCode!==null) throw Error('Shadowsocks fixture exited')
