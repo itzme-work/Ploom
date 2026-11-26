@@ -86,7 +86,7 @@ try {
   console.log('Activity started; attaching to debug WebView')
   ;[device]=await android.devices()
   device.setDefaultTimeout(20000)
-  const page=await (await device.webView({pkg,timeout:30000})).page()
+  const page=await (await device.webView({pkg},{timeout:30000})).page()
   page.setDefaultTimeout(20000)
   console.log('WebView attached',await page.evaluate(()=>navigator.userAgent))
   const button=name=>page.getByRole('button',{name,exact:true,includeHidden:true})

@@ -18,8 +18,21 @@ if [[ "$api" == 36 ]]; then
     adb shell wm density 240
 fi
 adb install packages/Ploom-vpn-emulator.apk
-timeout --kill-after=5s 180s node apps/client/e2e/android-vpn.mjs
-adb shell pm clear work.itzme.ploom
-PLOOM_SS_TEST_CORE="$RUNNER_TEMP/sing-box" timeout --kill-after=5s 180s node apps/client/e2e/android-vpn.mjs
-adb shell pm clear work.itzme.ploom
-PLOOM_REALITY_TEST_CORE="$RUNNER_TEMP/sing-box" timeout --kill-after=5s 180s node apps/client/e2e/android-vpn.mjs
+failed=0
+for protocol in http shadowsocks reality; do
+    adb shell pm clear work.itzme.ploom
+    echo "API $api: starting $protocol"
+    provider=()
+    case "$protocol" in
+        shadowsocks) provider=("PLOOM_SS_TEST_CORE=$RUNNER_TEMP/sing-box");;
+        reality) provider=("PLOOM_REALITY_TEST_CORE=$RUNNER_TEMP/sing-box");;
+    esac
+    if env "${provider[@]}" timeout --kill-after=5s 180s node apps/client/e2e/android-vpn.mjs; then
+        echo "API $api / $protocol: passed" >> "$GITHUB_STEP_SUMMARY"
+    else
+        status=$?
+        echo "API $api / $protocol: failed (exit $status)" >> "$GITHUB_STEP_SUMMARY"
+        failed=1
+    fi
+done
+exit "$failed"

@@ -76,7 +76,7 @@ jobs:
         sdk: ['28', '30', '33', '35', '36', '37.0']
     needs: build
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with: {persist-credentials: false}
