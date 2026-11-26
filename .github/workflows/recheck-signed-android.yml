@@ -1,0 +1,46 @@
+name: Recheck signed Android 0.3.0
+on:
+  push:
+    branches: [fix/signed-android-import]
+  pull_request:
+    paths:
+      - 'scripts/test-signed-connection.py'
+      - '.github/workflows/recheck-signed-android.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  installed:
+    if: github.event_name != 'pull_request' || github.head_ref == 'fix/signed-android-import'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: {persist-credentials: false}
+      - name: Download existing packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: itzme-work/Ploom
+          BASELINE: ${{ vars.PLOOM_020_BASELINE_RUN || '45560158367' }}
+        run: |
+          set -euo pipefail
+          gh run download "$BASELINE" -n verified-release -D baseline
+          echo '5e799611a2ca59a2f87b6edc8afc464496de5b705d19aea80a94485345c339ce  baseline/Ploom-arm64.apk' | sha256sum -c -
+          gh run download 45825342178 -n official-Linux -D candidate
+          tools="$ANDROID_HOME/build-tools/36.0.0"
+          for pair in baseline:0.2.0 candidate:0.3.0; do
+            dir=${pair%:*}
+            "$tools/apksigner" verify --print-certs "$dir/Ploom-arm64.apk" > "$dir/signer.txt"
+            "$tools/aapt" dump badging "$dir/Ploom-arm64.apk" > "$dir/badging.txt"
+            grep "^package: name='work.itzme.ploom' " "$dir/badging.txt" | grep -F "versionName='${pair#*:}'"
+          done
+          diff <(grep 'certificate SHA-256 digest:' baseline/signer.txt) <(grep 'certificate SHA-256 digest:' candidate/signer.txt)
+          sudo chmod a+rw /dev/kvm
+      - uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          disk-size: 6G
+          script: python3 scripts/test-signed-connection.py
