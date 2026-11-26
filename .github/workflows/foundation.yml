@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with: {node-version: 22}
       - run: npm ci
       - run: npm run build
@@ -27,7 +27,7 @@ jobs:
       - name: Check Windows PowerShell wizard and loopback site
         shell: powershell
         run: ../../scripts/windows/Test-Wizard.ps1
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with: {node-version: 22}
       - run: npm ci
       - run: npm run build
@@ -60,7 +60,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with: {node-version: 22}
       - uses: actions/setup-java@v4
         with: {distribution: temurin, java-version: 17}
@@ -94,7 +94,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with: {node-version: 22}
       - uses: actions/setup-java@v4
         with: {distribution: temurin, java-version: 17}
@@ -163,7 +163,7 @@ jobs:
         with:
           name: ploom-windows-x64-debug
           path: test-windows
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with: {node-version: 22}
       - run: npm ci --prefix apps/client
       - name: Exercise package verification with disposable test identity

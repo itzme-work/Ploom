@@ -41,7 +41,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: {persist-credentials: false}
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with: {node-version: 22}
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         if: runner.os == 'Linux'
@@ -188,7 +188,7 @@ jobs:
         with: {persist-credentials: false}
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with: {pattern: 'verified-*', path: packages}
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with: {node-version: 22}
       - run: npm ci
         working-directory: apps/client
@@ -231,7 +231,7 @@ jobs:
           cd baseline
           echo '5e799611a2ca59a2f87b6edc8afc464496de5b705d19aea80a94485345c339ce  Ploom-arm64.apk' | sha256sum -c -
           echo '91fbe9a8b922080c243c5f4bc69660a3cecd3cb86a81ddc45069e0be8ad534ef  Ploom.exe' | sha256sum -c -
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         if: runner.os == 'Windows'
         with: {node-version: 22}
       - if: runner.os == 'Windows'
