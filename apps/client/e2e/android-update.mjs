@@ -36,7 +36,6 @@ mode('good')
 launch()
 const page=await webview()
 await libraryFixture(page,true)
-shell('appops','set',pkg,'REQUEST_INSTALL_PACKAGES','allow')
 const desired={style:'ASCII',mode:'Dark',language:'English',accent:'Mint',scale:'115%',font:'Mono',effects:'Low',transparency:'Off',motion:'Off',sound:'On',volume:'50%',soundset:'Soft',channel:'Beta',automatic:'Off'}
 for(const [name,value] of Object.entries(desired)) await page.getByRole('combobox',{name,exact:true}).selectOption(value)
 await page.getByRole('button',{name:'Check for updates'}).click()

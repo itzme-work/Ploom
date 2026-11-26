@@ -83,6 +83,12 @@ try {
     lines.close()
   }
   shell('am','start','-W','-n',pkg+'/.MainActivity')
+  if(process.env.PLOOM_EXPECT_ARM32){
+    const pid=shell('pidof',pkg)
+    if(!/^\d+$/.test(pid)) throw Error('Missing installed ARMv7 process')
+    const maps=shell('run-as',pkg,'cat','/proc/'+pid+'/maps')
+    if(!maps.includes('/app_process32')) throw Error('Expected live 32-bit Android process')
+  }
   console.log('Activity started; attaching to debug WebView')
   ;[device]=await android.devices()
   device.setDefaultTimeout(20000)

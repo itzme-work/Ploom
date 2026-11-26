@@ -73,7 +73,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        sdk: ['28', '30', '33', '35', '36', '37.0']
+        sdk: ['24', '26', '28', '30', '33', '35', '36', '37.0']
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -145,6 +145,31 @@ jobs:
           path: ${{ runner.temp }}/Ploom-vpn-armv7-debug.apk
           retention-days: 7
           if-no-files-found: error
+  armv7-runtime:
+    needs: armv7-evaluation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: {persist-credentials: false}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with: {name: experimental-armv7-debug, path: packages}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - run: npm ci
+        working-directory: apps/client
+      - run: sudo chmod a+rw /dev/kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86
+          target: google_apis
+          disk-size: 6G
+          script: |
+            adb shell getprop ro.product.cpu.abilist | grep -w armeabi-v7a
+            adb install --abi armeabi-v7a packages/Ploom-vpn-armv7-debug.apk
+            adb shell dumpsys package work.itzme.ploom | grep 'primaryCpuAbi=armeabi-v7a'
+            PLOOM_EXPECT_ARM32=1 timeout 240s node apps/client/e2e/android-vpn.mjs
   windows-proxy:
     permissions: {contents: read, actions: read}
     runs-on: windows-2022

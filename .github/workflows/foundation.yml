@@ -87,6 +87,10 @@ jobs:
           path: apps/client/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
   android-emulator:
+    strategy:
+      fail-fast: false
+      matrix:
+        sdk: [24, 26, 35]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -110,12 +114,14 @@ jobs:
         run: sudo chmod a+rw /dev/kvm
       - uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
+          api-level: ${{ matrix.sdk }}
+          target: google_apis
+          disk-size: 6G
           arch: x86_64
           working-directory: apps/client
           script: |
             adb install "$RUNNER_TEMP/base.apk"
-            adb shell appops set work.itzme.ploom REQUEST_INSTALL_PACKAGES allow
+            bash ../../scripts/prepare-installer-test.sh
             adb reverse tcp:18888 tcp:18888
             adb shell settings put global http_proxy 127.0.0.1:18888
             bash ../../scripts/run-android-update-fixture.sh
