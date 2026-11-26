@@ -66,9 +66,8 @@ async function exchangeDns({server,target}){
     expect(data.toString('hex')).toBe(query)
     server.send(Buffer.from(answer,'hex'),peer.port,peer.address)
   })
-  // Keep stdin open briefly so toybox can receive the UDP reply before EOF.
-  const command=`(printf '%s' '${query}' | toybox xxd -r -p; sleep 2) | toybox nc -u -w 5 ${target} 18053 | toybox xxd -p`
-  const [reply]=await Promise.all([run('adb',['shell',command],{timeout:10000}),receiver])
+  const family=target.includes(':')?'udp6':'udp4'
+  const [reply]=await Promise.all([run('adb',['shell','/data/local/tmp/ploom-test-probe',family,'18053',query],{timeout:12000}),receiver])
   expect(reply.stdout.replace(/\s/g,'')).toBe(answer)
 }
 let device, reality, realityProcess
@@ -132,7 +131,8 @@ try {
     await tap(button('Confirm'))
     console.log('Endpoint consent accepted for session',session)
     for(let i=0;session===1 && i<20;i++){
-      shell('uiautomator','dump','/sdcard/ploom-consent.xml')
+      if(await page.getByText('TUN open · connectivity unverified').count()) break
+      try { shell('uiautomator','dump','/sdcard/ploom-consent.xml') } catch { await delay(300); continue }
       const xml=shell('cat','/sdcard/ploom-consent.xml')
       const lanAllow=(xml.match(/<node\b[^>]+>/g)||[]).find(n=>n.includes('permissioncontroller') && n.includes(':id/permission_allow_button"'))
       if(lanAllow && Number(shell('getprop','ro.build.version.sdk'))>=37){
@@ -153,8 +153,7 @@ try {
     // The server runs on this event loop, so the adb request must remain asynchronous.
     expect(tunnels().some(name=>!initialTunnels.includes(name))).toBe(true)
     if(reality){
-      const request=`printf 'GET /${reality.token} HTTP/1.0\\r\\nHost: fixture.invalid\\r\\n\\r\\n' | toybox nc -w 8 192.0.2.90 ${reality.port}`
-      const {stdout}=await run('adb',['shell',request],{timeout:12000})
+      const {stdout}=await run('adb',['shell','/data/local/tmp/ploom-test-probe','http',String(reality.port),reality.token],{timeout:12000})
       expect(stdout.split(/\r?\n\r?\n/).at(-1)).toBe(reality.token)
       console.log('Installed Android VPN passed VLESS REALITY/Vision challenge.')
     }else if(shadowsocks){

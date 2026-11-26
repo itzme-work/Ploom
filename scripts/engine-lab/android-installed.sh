@@ -18,6 +18,8 @@ if [[ "$api" == 36 ]]; then
     adb shell wm density 240
 fi
 adb install packages/Ploom-vpn-emulator.apk
+adb push packages/android-probe /data/local/tmp/ploom-test-probe
+adb shell chmod 700 /data/local/tmp/ploom-test-probe
 failed=0
 for protocol in http shadowsocks reality; do
     adb shell pm clear work.itzme.ploom

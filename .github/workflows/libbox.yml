@@ -24,6 +24,7 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'ndk;27.2.12479018' 'platforms;android-36'
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
           bash scripts/libbox/build.sh "$RUNNER_TEMP/deliver"
+          "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android24-clang" -Wall -Wextra -Werror -O2 scripts/engine-lab/android-probe.c -o "$RUNNER_TEMP/deliver/android-probe"
           python3 scripts/libbox/sbom.py "$RUNNER_TEMP/deliver"
           python3 scripts/libbox/notices.py "$RUNNER_TEMP/deliver"
           cp -r LICENSES "$RUNNER_TEMP/deliver/"
@@ -65,7 +66,9 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: emulator-apk
-          path: ${{ runner.temp }}/deliver/Ploom-vpn-emulator.apk
+          path: |
+            ${{ runner.temp }}/deliver/Ploom-vpn-emulator.apk
+            ${{ runner.temp }}/deliver/android-probe
           retention-days: 7
           if-no-files-found: error
   android-vpn:
