@@ -10,11 +10,14 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
 
 public final class PloomVpnService extends VpnService implements CommandServerHandler {
+    @androidx.annotation.Keep
     public static volatile String state = "idle";
     private final java.util.concurrent.ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
     private static volatile long[] snapshot;
+    @androidx.annotation.Keep
     public static volatile String networkType = "offline";
     private long started, up, down, last;
+    @androidx.annotation.Keep
     public static long[] metrics() { long[] v=snapshot;return v==null?null:v.clone(); }
     @Override public void onCreate(){
         super.onCreate();
