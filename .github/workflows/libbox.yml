@@ -202,11 +202,11 @@ jobs:
           $wintun = Join-Path $env:RUNNER_TEMP 'wintun.zip'
           Invoke-WebRequest 'https://www.wintun.net/builds/wintun-0.14.1.zip' -OutFile $wintun
           $overlay = Join-Path $env:RUNNER_TEMP 'wintun-overlay'
-          python "$env:GITHUB_WORKSPACE/scripts/windows-core/prepare.py" $module $wintun $overlay $engine.FullName
+          python "$env:GITHUB_WORKSPACE/scripts/windows-core/prepare.py" $module $wintun $overlay $overlay
           if ($LASTEXITCODE) { throw 'Wintun verification failed' }
           go build -mod=vendor -overlay "$overlay/overlay.json" -trimpath -buildvcs=false -tags 'with_quic,with_wireguard,with_utls,with_gvisor,badlinkname,tfogo_checklinkname0' -ldflags '-checklinkname=0 -X github.com/sagernet/sing-box/constant.Version=1.14.4' -o "$engine/sing-box.exe" ./cmd/sing-box
           if ($LASTEXITCODE) { throw 'Core build failed' }
-          python -c "import pathlib,sys; p=pathlib.Path(sys.argv[1]); sys.exit((p/'wintun.dll').read_bytes() in (p/'sing-box.exe').read_bytes())" $engine.FullName
+          python -c "import pathlib,sys; p=pathlib.Path(sys.argv[1]); sys.exit((p/'wintun.dll').exists() or (pathlib.Path(sys.argv[2])/'wintun.dll').read_bytes() in (p/'sing-box.exe').read_bytes())" $engine.FullName $overlay
           if ($LASTEXITCODE) { throw 'Unexpected embedded Wintun binary' }
           go mod verify
           if ($LASTEXITCODE) { throw 'Go module verification failed' }
@@ -245,6 +245,9 @@ jobs:
           $installer = (Get-ChildItem src-tauri/target/debug/bundle/nsis/*.exe).FullName
           $proc = Start-Process $installer -ArgumentList "/S /D=$dir" -Wait -PassThru
           if ($proc.ExitCode) { throw 'NSIS install failed' }
+          # The driver is a runner-only fixture, outside the packaged application.
+          if (Test-Path "$dir/engine/wintun.dll") { throw 'Installer unexpectedly distributed Wintun' }
+          Copy-Item "$env:RUNNER_TEMP/wintun-overlay/wintun.dll" "$dir/engine/wintun.dll"
           foreach ($mode in 'local','tun-path','system','core-crash','datagrams','reality','tray') {
             $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $env:RUNNER_TEMP "proxy-$mode-profile"
             node e2e/windows-local.mjs "$dir/ploom.exe" $mode
