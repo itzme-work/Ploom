@@ -21,11 +21,16 @@ go install github.com/sagernet/gomobile/cmd/gomobile@v0.1.13
 go install github.com/sagernet/gomobile/cmd/gobind@v0.1.13
 go mod download
 go mod verify
-gomobile bind -target android/arm64,android/amd64 -androidapi 24 -javapkg=io.nekohasekai -libname=box \
+case "${2:-review}" in
+  review) targets=android/arm64,android/amd64; abi=arm64-v8a ;;
+  armv7) targets=android/arm; abi=armeabi-v7a ;;
+  *) echo "Unknown Android target group" >&2; exit 2 ;;
+esac
+gomobile bind -target "$targets" -androidapi 24 -javapkg=io.nekohasekai -libname=box \
   -trimpath -tags with_quic,with_wireguard,with_utls,with_gvisor,badlinkname,tfogo_checklinkname0 \
   -ldflags '-extldflags=-Wl,-z,max-page-size=16384 -checklinkname=0 -X github.com/sagernet/sing-box/constant.Version=1.14.4' \
   -o "$dest/libbox.aar" ./experimental/libbox
-unzip -p "$dest/libbox.aar" jni/arm64-v8a/libbox.so > "$work/libbox.so"
+unzip -p "$dest/libbox.aar" "jni/$abi/libbox.so" > "$work/libbox.so"
 test -s "$work/libbox.so"
 go version -m "$work/libbox.so" > "$dest/libbox-buildinfo.txt"
 go mod vendor -o "$work/corresponding/vendor"
