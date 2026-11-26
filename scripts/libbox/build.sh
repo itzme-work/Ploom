@@ -23,6 +23,7 @@ go mod download
 go mod verify
 case "${2:-review}" in
   review) targets=android/arm64,android/amd64; abi=arm64-v8a ;;
+  release) targets=android/arm64; abi=arm64-v8a ;;
   armv7) targets=android/arm; abi=armeabi-v7a ;;
   *) echo "Unknown Android target group" >&2; exit 2 ;;
 esac
@@ -34,5 +35,7 @@ unzip -p "$dest/libbox.aar" "jni/$abi/libbox.so" > "$work/libbox.so"
 test -s "$work/libbox.so"
 go version -m "$work/libbox.so" > "$dest/libbox-buildinfo.txt"
 go mod vendor -o "$work/corresponding/vendor"
+# Rebuild uses the separately pinned upstream Wintun archive for Windows only.
+find "$work/corresponding/vendor" -iname 'wintun.dll' -delete
 tar -czf "$dest/libbox-vendor.tar.gz" -C "$work/corresponding" vendor
 (cd "$dest" && sha256sum libbox.aar *tar.gz > SHA256SUMS)
