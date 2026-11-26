@@ -263,7 +263,7 @@ jobs:
       - if: runner.os == 'Linux'
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
         with:
-          api-level: 30
+          api-level: 35
           target: google_apis
           arch: x86_64
           disk-size: 6G

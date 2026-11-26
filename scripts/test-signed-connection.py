@@ -16,23 +16,40 @@ def adb(*args):
 
 
 def control(label, *, platform=False, click=True):
-    deadline = time.monotonic() + 35
+    deadline = time.monotonic() + 45
+    size = re.findall(r"(\d+)x(\d+)", adb("shell", "wm", "size"))[-1]
+    width, height = map(int, size)
+    scrolls = 0
     while time.monotonic() < deadline:
         adb("shell", "uiautomator", "dump", "/sdcard/ploom-test.xml")
-        for node in ET.fromstring(adb("shell", "cat", "/sdcard/ploom-test.xml")).iter("node"):
+        nodes = list(ET.fromstring(adb("shell", "cat", "/sdcard/ploom-test.xml")).iter("node"))
+        for node in nodes:
             if platform:
                 match = (node.get("package") == "com.android.vpndialogs"
                          and node.get("resource-id") == "android:id/button1")
             else:
                 match = (node.get("package") == PACKAGE and
                          label in (node.get("content-desc"), node.get("text")))
-            if match:
-                x, y, right, bottom = map(int, re.findall(r'\d+', node.get("bounds")))
+            if match and node.get("enabled") == "true":
+                x, y, right, bottom = map(int, re.findall(r"-?\d+", node.get("bounds")))
+                x, y = max(0, x), max(0, y)
+                right, bottom = min(width, right), min(height, bottom)
+                if right <= x or bottom <= y:
+                    continue
                 if click:
                     adb("shell", "input", "tap", str((x + right)//2), str((y + bottom)//2))
                 return
+        if not platform:
+            # Search below the current viewport, then back towards its top.
+            start, end = (0.72, 0.35) if scrolls % 12 < 6 else (0.35, 0.72)
+            adb("shell", "input", "swipe", str(width//2), str(int(height*start)),
+                str(width//2), str(int(height*end)), "320")
+            scrolls += 1
         time.sleep(0.3)
-    raise RuntimeError(f"Missing visible control {label}")
+    # Only synthetic data is present on this disposable emulator.
+    print("Visible app controls:", [(n.get("class"), n.get("text"), n.get("content-desc"),
+          n.get("enabled")) for n in nodes if n.get("package") == PACKAGE], flush=True)
+    raise RuntimeError(f"Missing enabled on-screen control {label}")
 
 
 class Provider(socketserver.StreamRequestHandler):
@@ -67,6 +84,15 @@ def main():
     control("Subscriptions")
     control("Configurations")
     adb("shell", "input", "text", "http://10.0.2.2:18483")
+    # Verify actual editor contents before preview. A click on the label
+    # or an IME covering the next control must not silently produce an empty list.
+    adb("shell", "uiautomator", "dump", "/sdcard/ploom-test.xml")
+    nodes = ET.fromstring(adb("shell", "cat", "/sdcard/ploom-test.xml")).iter("node")
+    if not any(n.get("class") == "android.widget.EditText" and
+               n.get("text") == "http://10.0.2.2:18483" for n in nodes):
+        raise RuntimeError("Fixture URI missing from the configuration editor")
+    if "mInputShown=true" in adb("shell", "dumpsys", "input_method"):
+        adb("shell", "input", "keyevent", "KEYCODE_BACK")
     control("Preview")
     control("Import (1)")
     control("Servers")
