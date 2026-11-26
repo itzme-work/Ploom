@@ -1,5 +1,7 @@
 name: Recheck signed Android 0.3.0
 on:
+  push:
+    branches: [fix/signed-android-import]
   pull_request:
     paths:
       - 'scripts/test-signed-connection.py'
@@ -10,7 +12,7 @@ permissions:
   actions: read
 jobs:
   installed:
-    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'fix/signed-android-import'
+    if: github.event_name != 'pull_request' || github.head_ref == 'fix/signed-android-import'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
