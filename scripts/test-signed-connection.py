@@ -15,7 +15,7 @@ def adb(*args):
     return subprocess.check_output(["adb", *args], text=True, timeout=45).strip()
 
 
-def control(label, *, platform=False, click=True):
+def control(label, *, platform=False, click=True, widget=None, checked=False):
     deadline = time.monotonic() + 45
     size = re.findall(r"(\d+)x(\d+)", adb("shell", "wm", "size"))[-1]
     width, height = map(int, size)
@@ -30,6 +30,10 @@ def control(label, *, platform=False, click=True):
             else:
                 match = (node.get("package") == PACKAGE and
                          label in (node.get("content-desc"), node.get("text")))
+            if widget and node.get("class") != widget:
+                continue
+            if checked and node.get("checked") != "true" and node.get("selected") != "true":
+                continue
             if match and node.get("enabled") == "true":
                 x, y, right, bottom = map(int, re.findall(r"-?\d+", node.get("bounds")))
                 x, y = max(0, x), max(0, y)
@@ -79,7 +83,7 @@ def main():
     assert "uid:" in uid
     launch()
     control("Settings")
-    control("Material")
+    control("style", widget="android.view.View")
     control("ASCII")
     control("Subscriptions")
     control("Configurations")
@@ -101,7 +105,9 @@ def main():
     assert uid == adb("shell", "pm", "list", "packages", "-U", PACKAGE)
     launch()
     control("Settings")
-    control("ASCII", click=False)
+    control("style", widget="android.view.View")
+    control("ASCII", click=False, checked=True)
+    adb("shell", "input", "keyevent", "KEYCODE_BACK")
     control("Home")
     control("Connect")
     control("Confirm")
