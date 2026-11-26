@@ -245,9 +245,7 @@ jobs:
           $installer = (Get-ChildItem src-tauri/target/debug/bundle/nsis/*.exe).FullName
           $proc = Start-Process $installer -ArgumentList "/S /D=$dir" -Wait -PassThru
           if ($proc.ExitCode) { throw 'NSIS install failed' }
-          node e2e/windows-tun.mjs "$dir/engine/sing-box.exe"
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          foreach ($mode in 'local','system','core-crash','datagrams','reality','tray') {
+          foreach ($mode in 'local','tun-path','system','core-crash','datagrams','reality','tray') {
             $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $env:RUNNER_TEMP "proxy-$mode-profile"
             node e2e/windows-local.mjs "$dir/ploom.exe" $mode
             if ($LASTEXITCODE) { exit $LASTEXITCODE }

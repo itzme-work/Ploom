@@ -1,4 +1,5 @@
 // Exercise the installed NSIS package, its real child process and its job lifetime.
+import {checkTunPath} from "./windows-tun.mjs"
 import { startShadowsocks, checkDatagrams } from './windows-datagrams.mjs'
 import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
@@ -92,7 +93,10 @@ try {
     const script=fileURLToPath(new URL('../../../scripts/windows/Test-TrayClose.ps1',import.meta.url))
     await run('powershell.exe',['-NoProfile','-File',script,'-ProcessId',String(app.pid)],{timeout:20000})
   }
-  if(datagrams){
+  if(process.argv[3]==='tun-path'){
+    await checkTunPath(join(dirname(exe),'engine','sing-box.exe'),port,token)
+    expect(visits).toBe(1)
+  }else if(datagrams){
     await checkDatagrams(port)
   } else if(fixture){
     const reply=await run('curl.exe',['--silent','--fail','--socks5','127.0.0.1:'+port,
