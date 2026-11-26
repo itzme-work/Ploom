@@ -100,6 +100,7 @@ jobs:
           PLOOM_EXPECTED_API: ${{ matrix.sdk }}
         with:
           api-level: ${{ matrix.sdk }}
+          disk-size: 6G
           ram-size: 3072M
           cores: 4
           emulator-boot-timeout: 900

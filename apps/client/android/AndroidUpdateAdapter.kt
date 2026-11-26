@@ -16,7 +16,6 @@ import app.tauri.plugin.Plugin
 import java.io.File
 import java.io.IOException
 import java.net.URL
-import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.HttpsURLConnection
 
