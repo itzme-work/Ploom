@@ -94,34 +94,43 @@ try {
   const page=await (await device.webView({pkg},{timeout:30000})).page()
   page.setDefaultTimeout(20000)
   console.log('WebView attached',await page.evaluate(()=>navigator.userAgent))
-  const button=name=>page.locator(`button[aria-label=${JSON.stringify(name)}], button:text-is(${JSON.stringify(name)})`)
-  // Hit-test each control before sending a real CDP pointer event. Older
-  // Android WebViews predate Element.checkVisibility used by locator.click.
+  const button=name=>({selector:'button',name})
+  // Only use standard DOM APIs here. Playwright's injected selector engine
+  // calls Element.checkVisibility even during locator.evaluate on Chrome 83.
+  function inspect(control,operation){
+    return page.evaluate(({control,operation})=>{
+      const el=Array.from(document.querySelectorAll(control.selector)).find(node=>
+        !control.name || node.getAttribute('aria-label')===control.name || node.textContent.trim()===control.name)
+      if(!el) return null
+      if(operation==='selected') return el.getAttribute('aria-pressed')
+      el.scrollIntoView({block:'center'})
+      const r=el.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2
+      return !el.disabled && r.width && r.height && el.contains(document.elementFromPoint(x,y)) ? {x,y}:null
+    },{control,operation})
+  }
   async function tap(control){
     let point
-    await expect.poll(async()=>{
-      point=await control.evaluate(el=>{
-        el.scrollIntoView({block:'center'})
-        const r=el.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2
-        return !el.disabled && r.width && r.height && el.contains(document.elementFromPoint(x,y)) ? {x,y}:null
-      })
-      return Boolean(point)
-    },{timeout:20000}).toBe(true)
+    await expect.poll(async()=>Boolean(point=await inspect(control,'point')),{timeout:20000}).toBe(true)
     await page.mouse.click(point.x,point.y)
   }
-  async function visible(locator){
-    await expect.poll(()=>locator.evaluate(el=>el.getBoundingClientRect().height>0 && getComputedStyle(el).visibility==='visible'),{timeout:20000}).toBe(true)
+  function hasText(pattern){
+    return page.evaluate(source=>Array.from(document.querySelectorAll('body *')).some(el=>
+      el.children.length===0 && new RegExp(source,'i').test(el.textContent.trim()) &&
+      el.getBoundingClientRect().height>0 && getComputedStyle(el).visibility==='visible'),pattern.source)
+  }
+  async function visible(pattern){
+    await expect.poll(()=>hasText(pattern),{timeout:20000}).toBe(true)
   }
   await tap(button('Subscriptions'))
-  await tap(page.locator('textarea[aria-label="Configurations"]'))
+  await tap({selector:'textarea[aria-label="Configurations"]'})
   await page.keyboard.insertText(reality?.uri ?? shadowsocks?.uri ?? 'http://10.0.2.2:18483#Android-fixture')
   await tap(button('Preview'))
   await tap(button('Import (1)'))
   await tap(button('Servers'))
   await tap(button('Select'))
-  await expect(button('Select')).toHaveAttribute('aria-pressed','true')
+  await expect.poll(()=>inspect(button('Select'),'selected')).toBe('true')
   await tap(button('Home'))
-  await visible(page.getByText(reality?/fixture · vless/i:shadowsocks?/fixture · (ss|shadowsocks)/i:/fixture · http/i))
+  await visible(reality?/fixture · vless/i:shadowsocks?/fixture · (ss|shadowsocks)/i:/fixture · http/i)
   console.log('Synthetic configuration imported and selected')
   const initialTunnels=tunnels()
   expect(publicHttp()).toMatch(/^HTTP\/1\.[01] [23]\d\d/)
@@ -131,7 +140,7 @@ try {
     await tap(button('Confirm'))
     console.log('Endpoint consent accepted for session',session)
     for(let i=0;session===1 && i<20;i++){
-      if(await page.getByText('TUN open · connectivity unverified').count()) break
+      if(await hasText(/TUN open · connectivity unverified/)) break
       try { shell('uiautomator','dump','/sdcard/ploom-consent.xml') } catch { await delay(300); continue }
       const xml=shell('cat','/sdcard/ploom-consent.xml')
       const lanAllow=(xml.match(/<node\b[^>]+>/g)||[]).find(n=>n.includes('permissioncontroller') && n.includes(':id/permission_allow_button"'))
@@ -148,7 +157,7 @@ try {
       }
       await delay(300)
     }
-    await visible(page.getByText('TUN open · connectivity unverified'))
+    await visible(/TUN open · connectivity unverified/)
     shell('input','keyevent','KEYCODE_HOME')
     // The server runs on this event loop, so the adb request must remain asynchronous.
     expect(tunnels().some(name=>!initialTunnels.includes(name))).toBe(true)
@@ -195,7 +204,7 @@ try {
     }
     shell('am','start','-W','-n',pkg+'/.MainActivity')
     await tap(button('Disconnect'))
-    await visible(page.getByText('Disconnected',{exact:true}))
+    await visible(/^Disconnected$/)
     await expect.poll(tunnels,{timeout:20000}).toEqual(initialTunnels)
     await expect.poll(()=>shell('dumpsys','activity','services',pkg).split('\n').some(line=>line.includes('ServiceRecord{') && line.includes('PloomVpnService')),{timeout:20000}).toBe(false)
     expect(publicHttp()).toMatch(/^HTTP\/1\.[01] [23]\d\d/)
