@@ -230,8 +230,7 @@ class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
                     invoke.resolve()
                     return@Thread
                 }
-                require(Build.VERSION.SDK_INT >= 28) { "Direct updates require Android 9 or later" }
-                if (!pm.canRequestPackageInstalls()) {
+                if (Build.VERSION.SDK_INT >= 26 && !pm.canRequestPackageInstalls()) {
                     host.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:"+host.packageName)))
                     error("Allow installation from Ploom and retry")
                 }
@@ -248,15 +247,25 @@ class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
                     args.progress.sendObject(listOf("verify", apk.length(), apk.length()))
                     val verification = com.android.apksig.ApkVerifier.Builder(apk).setMinCheckedPlatformVersion(Build.VERSION.SDK_INT).setMaxCheckedPlatformVersion(Build.VERSION.SDK_INT).build().verify()
                     require(verification.isVerified && (verification.isVerifiedUsingV2Scheme || verification.isVerifiedUsingV3Scheme)) { "APK signature verification failed" }
-                    val flags = PackageManager.GET_SIGNING_CERTIFICATES
+                    // API 24–27 supports scheme v2. Reject v1-only and require exactly
+                    // the installed signers, including every signer of a multisigned app.
+                    val modern = Build.VERSION.SDK_INT >= 28
+                    require(modern || verification.isVerifiedUsingV2Scheme) { "APK requires a v2 signature" }
+                    @Suppress("DEPRECATION")
+                    val flags = if (modern) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
                     val archive = requireNotNull(pm.getPackageArchiveInfo(apk.path, flags)) { "Invalid APK" }
                     val installed = pm.getPackageInfo(host.packageName, flags)
-                    require(archive.packageName == host.packageName && archive.versionName == version && archive.longVersionCode > installed.longVersionCode) { "Incompatible APK version" }
-                    fun signers(info: android.content.pm.PackageInfo) = requireNotNull(info.signingInfo).apkContentsSigners.map {
-                        MessageDigest.getInstance("SHA-256").digest(it.toByteArray()).toList()
-                    }.toSet()
+                    @Suppress("DEPRECATION")
+                    fun versionCode(info: android.content.pm.PackageInfo) =
+                        if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
+                    require(archive.packageName == host.packageName && archive.versionName == version && versionCode(archive) > versionCode(installed)) { "Incompatible APK version" }
+                    @Suppress("DEPRECATION")
+                    fun signers(info: android.content.pm.PackageInfo) = requireNotNull(
+                        if (Build.VERSION.SDK_INT >= 28) info.signingInfo?.apkContentsSigners else info.signatures
+                    ).map { it.toByteArray().toList() }.toSet()
                     val trusted = signers(installed)
-                    require(trusted.isNotEmpty() && trusted == signers(archive)) { "APK signer rejected" }
+                    val verified = verification.signerCertificates.map { it.encoded.toList() }.toSet()
+                    require(trusted.isNotEmpty() && trusted == verified && trusted == signers(archive)) { "APK signer rejected" }
                     args.progress.sendObject(listOf("install", apk.length(), apk.length()))
                     val uri = FileProvider.getUriForFile(host, host.packageName+".updates", apk)
                     host.contentResolver.openFileDescriptor(uri, "r").use {
