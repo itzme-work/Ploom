@@ -16,7 +16,6 @@ import app.tauri.plugin.Plugin
 import java.io.File
 import java.io.IOException
 import java.net.URL
-import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.HttpsURLConnection
 
@@ -32,8 +31,124 @@ class BrowserArgs { lateinit var expected: String }
 @InvokeArg
 class InstallArgs { lateinit var expected: String; lateinit var progress: app.tauri.plugin.Channel }
 
-@TauriPlugin
+@InvokeArg
+class TunnelArgs { lateinit var config: String; var localEndpoint: Boolean = false }
+
+@TauriPlugin(permissions = [app.tauri.annotation.Permission(alias = "vpnNotification", strings = ["android.permission.POST_NOTIFICATIONS"]),
+    app.tauri.annotation.Permission(alias = "localEndpoint", strings = ["android.permission.ACCESS_LOCAL_NETWORK"])])
 class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
+    private fun notificationPermissionMissing() = Build.VERSION.SDK_INT >= 33 &&
+        host.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+
+    @Command
+    fun requestVpnNotification(invoke: Invoke) {
+        if (notificationPermissionMissing()) requestPermissionForAlias("vpnNotification", invoke, "notificationResult")
+        else notificationResult(invoke)
+    }
+
+    @app.tauri.annotation.PermissionCallback
+    fun notificationResult(invoke: Invoke) {
+        val result = app.tauri.plugin.JSObject()
+        result.put("granted", !notificationPermissionMissing())
+        invoke.resolve(result)
+    }
+    @Command
+    fun scanQr(invoke: Invoke) {
+        startActivityForResult(invoke,Intent(host,QrScannerActivity::class.java),"qrResult")
+    }
+    @app.tauri.annotation.ActivityCallback
+    fun qrResult(invoke: Invoke,result: androidx.activity.result.ActivityResult) {
+        val response=app.tauri.plugin.JSObject()
+        response.put("text",if(result.resultCode==Activity.RESULT_OK)result.data?.getStringExtra("qr") else "")
+        invoke.resolve(response)
+    }
+    @Command
+    fun trafficSummary(invoke: Invoke){
+        val sums=TrafficStore.summary(host)
+        val reply=app.tauri.plugin.JSObject()
+        reply.put("bytes",org.json.JSONArray(sums.toList()));invoke.resolve(reply)
+    }
+    @Command
+    fun clearTraffic(invoke: Invoke){
+        TrafficStore.clear(host)
+        invoke.resolve()
+    }
+    @Command
+    fun tunnelProbe(invoke: Invoke){
+        Thread {
+            var http:HttpsURLConnection?=null
+            try {
+                val cm=host.getSystemService(android.net.ConnectivityManager::class.java)
+                val net=cm.activeNetwork ?: error("offline")
+                require(cm.getNetworkCapabilities(net)?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN)==true)
+                val service=Class.forName(vpnClass)
+                require(service.getField("state").get(null)=="tunnel-open")
+                val start=android.os.SystemClock.elapsedRealtime()
+                http=net.openConnection(URL("https://connectivitycheck.gstatic.com/generate_204")) as HttpsURLConnection
+                http.instanceFollowRedirects=false
+                http.connectTimeout=8000;http.readTimeout=8000;http.useCaches=false
+                require(http.responseCode==204 && cm.activeNetwork==net && service.getField("state").get(null)=="tunnel-open")
+                val result=app.tauri.plugin.JSObject()
+                result.put("ms",android.os.SystemClock.elapsedRealtime()-start);invoke.resolve(result)
+            } catch(_:Exception){invoke.reject("network")} finally{http?.disconnect()}
+        }.start()
+    }
+    private val vpnClass = "work.itzme.ploom.PloomVpnService"
+    @Command
+    fun tunnelState(invoke: Invoke) {
+        val result = app.tauri.plugin.JSObject()
+        try {
+            val service=Class.forName(vpnClass)
+            result.put("state",service.getField("state").get(null))
+            result.put("network",service.getField("networkType").get(null))
+            result.put("notificationPermissionMissing",notificationPermissionMissing())
+            val usage=service.getMethod("metrics").invoke(null) as? LongArray
+            if(usage!=null)result.put("traffic",org.json.JSONArray(usage.toList()))
+        } catch (_: ClassNotFoundException) { result.put("state","unavailable") }
+        invoke.resolve(result)
+    }
+    @Command
+    fun tunnelStop(invoke: Invoke) {
+        // Android can still hold a VpnService binding after stopService(). Close the
+        // engine and its TUN descriptor before asking Android to destroy the service.
+        host.startService(Intent().setClassName(host, vpnClass).setAction("stop"))
+        invoke.resolve()
+    }
+    @Command
+    fun tunnelStart(invoke: Invoke) {
+        try {
+            Class.forName(vpnClass)
+            if (invoke.parseArgs(TunnelArgs::class.java).localEndpoint && Build.VERSION.SDK_INT >= 37 &&
+                host.checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK") != PackageManager.PERMISSION_GRANTED) {
+                requestPermissionForAlias("localEndpoint", invoke, "localEndpointResult")
+            } else prepareTunnel(invoke)
+        } catch (_: Exception) { invoke.reject("VPN unavailable") }
+    }
+    @app.tauri.annotation.PermissionCallback
+    fun localEndpointResult(invoke: Invoke) {
+        if (host.checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK") == PackageManager.PERMISSION_GRANTED) prepareTunnel(invoke)
+        else invoke.reject("Local network permission denied")
+    }
+    private fun prepareTunnel(invoke: Invoke) {
+        try {
+            val consent = android.net.VpnService.prepare(host)
+            if (consent == null) startTunnel(invoke)
+            else startActivityForResult(invoke, consent, "vpnConsent")
+        } catch (_: Exception) { invoke.reject("VPN unavailable") }
+    }
+    @app.tauri.annotation.ActivityCallback
+    fun vpnConsent(invoke: Invoke,result: androidx.activity.result.ActivityResult) {
+        if (result.resultCode == Activity.RESULT_OK) startTunnel(invoke)
+        else invoke.reject("VPN permission denied")
+    }
+    private fun startTunnel(invoke: Invoke) {
+        try {
+            val intent = Intent().setClassName(host,vpnClass).setAction("start")
+                .putExtra("config",invoke.parseArgs(TunnelArgs::class.java).config)
+            if (Build.VERSION.SDK_INT >= 26) host.startForegroundService(intent) else host.startService(intent)
+            invoke.resolve()
+        } catch (_: Exception) { invoke.reject("VPN service unavailable") }
+    }
     @Command
     fun libraryKey(invoke: Invoke) {
         try {
@@ -114,8 +229,7 @@ class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
                     invoke.resolve()
                     return@Thread
                 }
-                require(Build.VERSION.SDK_INT >= 28) { "Direct updates require Android 9 or later" }
-                if (!pm.canRequestPackageInstalls()) {
+                if (Build.VERSION.SDK_INT >= 26 && !pm.canRequestPackageInstalls()) {
                     host.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:"+host.packageName)))
                     error("Allow installation from Ploom and retry")
                 }
@@ -132,15 +246,25 @@ class AndroidUpdateAdapter(private val host: Activity): Plugin(host) {
                     args.progress.sendObject(listOf("verify", apk.length(), apk.length()))
                     val verification = com.android.apksig.ApkVerifier.Builder(apk).setMinCheckedPlatformVersion(Build.VERSION.SDK_INT).setMaxCheckedPlatformVersion(Build.VERSION.SDK_INT).build().verify()
                     require(verification.isVerified && (verification.isVerifiedUsingV2Scheme || verification.isVerifiedUsingV3Scheme)) { "APK signature verification failed" }
-                    val flags = PackageManager.GET_SIGNING_CERTIFICATES
+                    // API 24–27 supports scheme v2. Reject v1-only and require exactly
+                    // the installed signers, including every signer of a multisigned app.
+                    val modern = Build.VERSION.SDK_INT >= 28
+                    require(modern || verification.isVerifiedUsingV2Scheme) { "APK requires a v2 signature" }
+                    @Suppress("DEPRECATION")
+                    val flags = if (modern) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
                     val archive = requireNotNull(pm.getPackageArchiveInfo(apk.path, flags)) { "Invalid APK" }
                     val installed = pm.getPackageInfo(host.packageName, flags)
-                    require(archive.packageName == host.packageName && archive.versionName == version && archive.longVersionCode > installed.longVersionCode) { "Incompatible APK version" }
-                    fun signers(info: android.content.pm.PackageInfo) = requireNotNull(info.signingInfo).apkContentsSigners.map {
-                        MessageDigest.getInstance("SHA-256").digest(it.toByteArray()).toList()
-                    }.toSet()
+                    @Suppress("DEPRECATION")
+                    fun versionCode(info: android.content.pm.PackageInfo) =
+                        if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
+                    require(archive.packageName == host.packageName && archive.versionName == version && versionCode(archive) > versionCode(installed)) { "Incompatible APK version" }
+                    @Suppress("DEPRECATION")
+                    fun signers(info: android.content.pm.PackageInfo) = requireNotNull(
+                        if (Build.VERSION.SDK_INT >= 28) info.signingInfo?.apkContentsSigners else info.signatures
+                    ).map { it.toByteArray().toList() }.toSet()
                     val trusted = signers(installed)
-                    require(trusted.isNotEmpty() && trusted == signers(archive)) { "APK signer rejected" }
+                    val verified = verification.signerCertificates.map { it.encoded.toList() }.toSet()
+                    require(trusted.isNotEmpty() && trusted == verified && trusted == signers(archive)) { "APK signer rejected" }
                     args.progress.sendObject(listOf("install", apk.length(), apk.length()))
                     val uri = FileProvider.getUriForFile(host, host.packageName+".updates", apk)
                     host.contentResolver.openFileDescriptor(uri, "r").use {

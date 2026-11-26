@@ -63,3 +63,84 @@ pub async fn library_export(
         .await
         .map_err(|_| "Export canceled or failed".into())
 }
+
+#[tauri::command]
+pub async fn tunnel_start(
+    app: tauri::AppHandle,
+    raw: String,
+    lan_endpoint: Option<String>,
+) -> Result<(), String> {
+    let outbound = super::connection::outbound(&raw, lan_endpoint).await?;
+    let local = match outbound["server"]
+        .as_str()
+        .and_then(|host| host.parse::<std::net::IpAddr>().ok())
+    {
+        Some(std::net::IpAddr::V4(ip)) => ip.is_private(),
+        Some(std::net::IpAddr::V6(ip)) => ip.is_unique_local(),
+        None => false,
+    };
+    let config = super::connection::tun(outbound);
+    app.state::<PluginHandle<tauri::Wry>>()
+        .run_mobile_plugin_async(
+            "tunnelStart",
+            serde_json::json!({"config":config.to_string(),"localEndpoint":local}),
+        )
+        .await
+        .map_err(|_| "permission or startup".into())
+}
+#[tauri::command]
+pub async fn tunnel_stop(app: tauri::AppHandle) -> Result<(), String> {
+    app.state::<PluginHandle<tauri::Wry>>()
+        .run_mobile_plugin_async("tunnelStop", serde_json::json!({}))
+        .await
+        .map_err(|_| "stop".into())
+}
+#[tauri::command]
+pub async fn request_vpn_notification(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    app.state::<PluginHandle<tauri::Wry>>()
+        .run_mobile_plugin_async("requestVpnNotification", serde_json::json!({}))
+        .await
+        .map_err(|_| "notification permission".into())
+}
+
+#[tauri::command]
+pub async fn tunnel_state(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    app.state::<PluginHandle<tauri::Wry>>()
+        .run_mobile_plugin_async("tunnelState", serde_json::json!({}))
+        .await
+        .map_err(|_| "state".into())
+}
+
+#[tauri::command]
+pub async fn scan_qr(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    app.state::<PluginHandle<tauri::Wry>>()
+        .run_mobile_plugin_async("scanQr", serde_json::json!({}))
+        .await
+        .map_err(|_| "camera".into())
+}
+
+#[tauri::command]
+pub async fn traffic_summary(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    app.state::<PluginHandle<tauri::Wry>>()
+        .run_mobile_plugin_async("trafficSummary", serde_json::json!({}))
+        .await
+        .map_err(|_| "statistics".into())
+}
+
+#[tauri::command]
+pub async fn clear_traffic(app: tauri::AppHandle) -> Result<(), String> {
+    app.state::<PluginHandle<tauri::Wry>>()
+        .run_mobile_plugin_async("clearTraffic", serde_json::json!({}))
+        .await
+        .map_err(|_| "statistics".into())
+}
+
+#[tauri::command]
+pub async fn tunnel_probe(app: tauri::AppHandle) -> Result<u64, String> {
+    let result: serde_json::Value = app
+        .state::<PluginHandle<tauri::Wry>>()
+        .run_mobile_plugin_async("tunnelProbe", serde_json::json!({}))
+        .await
+        .map_err(|_| "network")?;
+    result["ms"].as_u64().ok_or_else(|| "response".into())
+}

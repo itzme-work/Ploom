@@ -36,3 +36,31 @@ it('retains previous data after a network error or partial feed',async()=>{
  await expect(refresh(sub)).rejects.toThrow()
  expect(useLibrary.getState().data).toEqual(before)
 })
+it('retains the snapshot and updates its check timestamp on HTTP 304',async()=>{
+ sub.etag='"fixture"'
+ request.mockResolvedValue({unchanged:true})
+ await refresh(sub)
+ expect(request).toHaveBeenCalledWith('subscription_fetch',{url:sub.url,etag:sub.etag,modified:undefined})
+ const current=useLibrary.getState().data.subscriptions[0]
+ expect(current.entries).toEqual(sub.entries)
+ expect(current.updated).toBeGreaterThan(sub.updated)
+})
+it('preserves the last full profile when the provider changes format',async()=>{
+ await change(d=>{d.subscriptions[0].profile={format:'sing-box JSON',source:'{"outbounds":[]}'}})
+ const current=useLibrary.getState().data.subscriptions[0]
+ request.mockResolvedValue({text:previous,traffic:'',site:'',title:''})
+ await expect(refresh(current)).rejects.toThrow('profile format changed')
+ expect(useLibrary.getState().data.subscriptions[0].profile).toEqual(current.profile)
+})
+it('recovers discarded server edits only when the exact configuration returns',async()=>{
+ const first=sub.entries[0]
+ request.mockResolvedValue({text:'http://temporary.example.invalid:80',traffic:'',site:'',title:''})
+ await refresh(sub)
+ let source=useLibrary.getState().data.subscriptions[0]
+ expect(source.removed?.[0].entry.id).toBe(first.id)
+ request.mockResolvedValue({text:previous,traffic:'',site:'',title:''})
+ await refresh(source)
+ source=useLibrary.getState().data.subscriptions[0]
+ expect(source.entries[0]).toMatchObject({id:first.id,favorite:true,alias:'My node'})
+ expect(source.removed).toEqual([])
+})

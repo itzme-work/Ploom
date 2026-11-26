@@ -3213,14 +3213,17 @@ dependencies = [
 
 [[package]]
 name = "ploom"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
+ "base64 0.22.1",
+ "percent-encoding",
  "rcgen",
  "reqwest 0.12.28",
  "reqwest 0.13.5",
  "rfd",
  "semver",
  "serde_json",
+ "sha2 0.10.9",
  "tauri",
  "tauri-build",
  "tauri-plugin-clipboard-manager",
@@ -3229,7 +3232,9 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-rustls",
+ "uuid",
  "windows-sys 0.61.2",
+ "winreg",
 ]
 
 [[package]]

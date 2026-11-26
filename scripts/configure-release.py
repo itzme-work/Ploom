@@ -25,7 +25,8 @@ if not public_key:
     sys.exit("Missing public updater key")
 settings["plugins"]["updater"]["pubkey"] = public_key
 settings["version"] = version
-settings["bundle"].update(createUpdaterArtifacts=True, android={"versionCode": code})
+settings["bundle"]["createUpdaterArtifacts"] = True
+settings["bundle"].setdefault("android", {})["versionCode"] = code
 config.write_text(json.dumps(settings, indent=2))
 manifest = app / "src-tauri/Cargo.toml"
 text, count = re.subn(r'(?m)^version = "[^"]+"$', f'version = "{version}"', manifest.read_text(), count=1)

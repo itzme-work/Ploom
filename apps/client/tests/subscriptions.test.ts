@@ -33,3 +33,14 @@ it('roundtrips encrypted backups and rejects the wrong password or invalid forma
  expect(JSON.stringify(box)).not.toContain('subscriptions');expect(await open(box,'test fixture password')).toEqual(empty())
  await expect(open(box,'wrong')).rejects.toThrow();await expect(open({...box,v:2} as never,'test fixture password')).rejects.toThrow()
 })
+it('does not transfer personal edits to another endpoint with the same display name',()=>{
+ const [original]=parseSubscription(uri).servers
+ const [old]=reconcile([],[original])
+ old.note='private fixture';old.favorite=true
+ const moved=parseSubscription(uri.replace(host,'other.example.invalid')).servers
+ const [next]=reconcile([old],moved)
+ expect(next.id).not.toBe(old.id)
+ expect(next.note).toBeUndefined()
+ expect(next.favorite).toBeUndefined()
+ expect(reconcile([old],[original])[0].note).toBe(old.note)
+})

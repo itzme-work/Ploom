@@ -68,6 +68,13 @@ export async function open(box: Box, password: string): Promise<Library> {
 			typeof s.id !== "string" ||
 			typeof s.name !== "string" ||
 			typeof s.url !== "string" ||
+			(s.profile !== undefined &&
+				(!s.profile ||
+					!["WireGuard", "Clash/Mihomo", "Xray JSON", "sing-box JSON"].includes(
+						s.profile.format,
+					) ||
+					typeof s.profile.source !== "string" ||
+					new TextEncoder().encode(s.profile.source).length > 4194304)) ||
 			typeof s.enabled !== "boolean" ||
 			![0, -1, 15, 60, 360, 720, 1440].includes(s.interval) ||
 			!Number.isFinite(s.updated) ||
@@ -79,7 +86,20 @@ export async function open(box: Box, password: string): Promise<Library> {
 			throw Error("format");
 		if (identifiers.has(s.id)) throw Error("duplicate");
 		identifiers.add(s.id);
-		for (const e of s.entries) {
+		if (
+			s.removed !== undefined &&
+			(!Array.isArray(s.removed) ||
+				s.removed.length > 250 ||
+				s.removed.some(
+					(r: { at: number; entry: unknown }) =>
+						!r || !Number.isFinite(r.at) || !r.entry,
+				))
+		)
+			throw Error("format");
+		for (const e of [
+			...s.entries,
+			...(s.removed ?? []).map((r: { entry: unknown }) => r.entry),
+		]) {
 			if (
 				!e ||
 				[
@@ -106,6 +126,8 @@ export async function open(box: Box, password: string): Promise<Library> {
 						typeof e.diagnosis.result !== "string" ||
 						(e.diagnosis.ms !== undefined &&
 							!Number.isFinite(e.diagnosis.ms)))) ||
+				(e.note !== undefined &&
+					(typeof e.note !== "string" || e.note.length > 2048)) ||
 				(e.alias !== undefined && typeof e.alias !== "string")
 			)
 				throw Error("format");

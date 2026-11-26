@@ -1,7 +1,7 @@
 {
   "productName": "Ploom",
   "identifier": "work.itzme.ploom",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "build": {
     "beforeDevCommand": "npm run dev -- --port 1420 --strictPort",
     "devUrl": "http://localhost:1420",
@@ -35,6 +35,7 @@
             "allow-library-export","allow-library-site"
           ]
         },
+        {"identifier":"windows-proxy","platforms":["windows"],"windows":["main"],"permissions":["allow-tray-preferences","allow-proxy-probe","allow-proxy-start","allow-proxy-stop","allow-proxy-state"]},
         {
           "identifier": "android-download",
           "platforms": [
@@ -45,6 +46,7 @@
           ],
           "permissions": [
             "allow-cancel-download",
+            "allow-traffic-summary","allow-clear-traffic","allow-scan-qr","allow-tunnel-probe","allow-tunnel-start", "allow-tunnel-stop", "allow-tunnel-state", "allow-request-vpn-notification",
             "allow-open-update-browser"
           ]
         }
@@ -53,6 +55,7 @@
   },
   "bundle": {
     "active": true,
+    "android": {"minSdkVersion": 24},
     "targets": [
       "nsis"
     ],

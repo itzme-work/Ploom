@@ -8,8 +8,10 @@ inputs = dispatch["inputs"]
 assert inputs["mode"]["default"] == "Build only" and inputs["confirm"]["default"] is False
 jobs = flow["jobs"]
 guard = jobs["publish"]["if"]
-assert guard == "inputs.mode == 'Publish' && inputs.confirm && github.event_name == 'workflow_dispatch'"
-assert jobs["publish"]["needs"] == "verify"
+assert "inputs.mode == 'Publish' && inputs.confirm && github.event_name == 'workflow_dispatch'" in guard
+assert jobs["publish"]["needs"] == ["verify", "signed-connection"]
+assert "needs.signed-connection.result == 'success'" in guard
+assert jobs["signed-connection"]["needs"] == "verify"
 assert jobs["verify"]["needs"] == "build"
 assert jobs["build"]["environment"] == "ploom-release"
 assert jobs["build"]["strategy"]["matrix"]["version"] == jobs["verify"]["strategy"]["matrix"]["version"]

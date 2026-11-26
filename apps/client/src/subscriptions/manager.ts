@@ -1,7 +1,14 @@
+import { listen } from "@tauri-apps/api/event";
+import { useSettings } from "../store";
 import LibraryWorker from "./worker.ts?worker&inline";
 import { create } from "zustand";
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { empty, reconcile, type Library, type Subscription } from "./library";
+import {
+	empty,
+	refreshEntries,
+	type Library,
+	type Subscription,
+} from "./library";
 import { load, save } from "./vault";
 import type { Preview } from "./parser";
 export const useLibrary = create<{
@@ -22,7 +29,8 @@ export async function unlock(secret?: string) {
 export function change(fn: (data: Library) => void) {
 	const op = queue.then(async () => {
 		if (!password) throw Error("locked");
-		const data = structuredClone(useLibrary.getState().data);
+		const current = useLibrary.getState().data;
+        const data: Library = typeof structuredClone === "function" ? structuredClone(current) : JSON.parse(JSON.stringify(current));
 		fn(data);
 		if (
 			!data.subscriptions.some(
@@ -61,6 +69,9 @@ export function parse(text: string): Promise<Preview> {
 	});
 }
 export type Feed = {
+	suggestedHours?: number;
+	etag?: string;
+	modified?: string;
 	text: string;
 	traffic: string;
 	site: string;
@@ -74,14 +85,33 @@ export async function refresh(s: Subscription) {
 	if (active.has(s.id) || !s.url || !s.enabled) return;
 	active.add(s.id);
 	try {
-		const feed = await fetchFeed(s.url),
-			preview = await parse(feed.text);
+		const feed = await invoke<Feed | { unchanged: true }>(
+			"subscription_fetch",
+			{ url: s.url, etag: s.etag, modified: s.modified },
+		);
+		if ("unchanged" in feed) {
+			if (!s.etag && !s.modified) throw Error("http");
+			await change((data) => {
+				const current = data.subscriptions.find(
+					(x) => x.id === s.id && x.enabled && x.url === s.url,
+				);
+				if (current) current.updated = Date.now();
+			});
+			return;
+		}
+		const preview = await parse(feed.text);
 		if (!preview.servers.length || preview.invalid) throw Error("format");
 		await change((data) => {
 			const sub = data.subscriptions.find((x) => x.id === s.id);
 			if (!sub || !sub.enabled || sub.url !== s.url) return;
+			if (sub.profile && sub.profile.format !== preview.format)
+				throw Error("profile format changed");
+			if (sub.profile)
+				sub.profile = { format: preview.format, source: feed.text };
 			Object.assign(sub, {
-				entries: reconcile(sub.entries, preview.servers),
+				...refreshEntries(sub, preview.servers),
+				etag: feed.etag,
+				modified: feed.modified,
 				traffic: feed.traffic,
 				site: feed.site,
 				updated: Date.now(),
@@ -97,7 +127,10 @@ export function startLibrary() {
 		running = false;
 	const attempted = new Map<string, number>();
 	async function tick(start = false) {
-		if (closed || running || document.hidden) return;
+		const background =
+			/Windows/.test(navigator.userAgent) &&
+			useSettings.getState().prefs.backgroundSubscriptions === "On";
+		if (closed || running || (document.hidden && !background)) return;
 		running = true;
 		try {
 			for (const s of useLibrary.getState().data.subscriptions) {
@@ -125,11 +158,15 @@ export function startLibrary() {
 		.then(() => tick(true))
 		.catch(() => useLibrary.setState({ error: true }));
 	const resume = () => void tick();
+	const tray = /Windows/.test(navigator.userAgent)
+		? listen("ploom-refresh-due", resume)
+		: undefined;
 	const timer = setInterval(resume, 60000);
 	document.addEventListener("visibilitychange", resume);
 	return () => {
 		closed = true;
 		clearInterval(timer);
+		void tray?.then((stop) => stop());
 		document.removeEventListener("visibilitychange", resume);
 	};
 }

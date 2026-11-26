@@ -1,7 +1,16 @@
-import React, { useEffect, useState } from "react";
+import { useConfirmation } from "./subscriptions/confirm";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { House, Layers, Server, Settings, Power } from "lucide-react";
+import {
+	House,
+	Layers,
+	Server,
+	Settings,
+	ChartLine,
+	Power,
+} from "lucide-react";
 import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import semver from "semver";
 import { choices, useSettings } from "./store";
 import { checkRelease, current } from "./releases";
@@ -29,14 +38,153 @@ function App() {
 			p.language === "Русский" ||
 			(p.language === "System" && navigator.language.startsWith("ru")),
 		t = (a: string, b: string) => (ru ? a : b);
+	const { ask: confirmLan, prompt: lanPrompt } = useConfirmation(ru);
 	const [downloading, setDownloading] = useState(false);
 	const android = isTauri() && /Android/.test(navigator.userAgent);
+	const [tunnel, setTunnel] = useState("idle");
+	const [systemProxy, setSystemProxy] = useState(false);
+	const [totals, setTotals] = useState<number[]>();
+	const [traffic, setTraffic] = useState<number[]>();
+	const [proxyPort, setProxyPort] = useState<number>();
+	const windows = isTauri() && /Windows/.test(navigator.userAgent);
+	const [probeBusy, setProbeBusy] = useState(false);
+	const [probeMs, setProbeMs] = useState<number>();
+	useEffect(() => {
+		setProbeMs(undefined);
+	}, [tunnel, proxyPort]);
+	const [notificationMissing, setNotificationMissing] = useState(false);
+	const [requesting, request] = useState(false);
+	useEffect(() => {
+		if (!android && !windows) return;
+		let alive = true;
+		const poll = () =>
+			invoke<{
+				state: string;
+				port?: number;
+				traffic?: number[];
+				notificationPermissionMissing?: boolean;
+			}>(android ? "tunnel_state" : "proxy_state")
+				.then(({ state, port, traffic, notificationPermissionMissing }) => {
+					if (alive) {
+						setTunnel(state);
+						setProxyPort(port);
+						setTraffic(traffic);
+						setNotificationMissing(notificationPermissionMissing === true);
+					}
+				})
+				.catch(() => {
+					if (alive) setTunnel("unavailable");
+				});
+		void poll();
+		const id = setInterval(poll, 1500);
+		return () => {
+			alive = false;
+			clearInterval(id);
+		};
+	}, [android, windows]);
+	const connectFromTray = useRef(() => {});
+	useEffect(() => {
+		connectFromTray.current = () => {
+			if (
+				!requesting &&
+				selectedServer &&
+				(tunnel === "idle" || tunnel === "error")
+			)
+				void toggleTunnel();
+		};
+	});
+	useEffect(() => {
+		if (!windows) return;
+		void invoke("tray_preferences", {
+			minimize: p.minimizeToTray === "On",
+			background: p.backgroundSubscriptions === "On",
+			russian: ru,
+		}).catch(() => {
+			if (p.minimizeToTray === "On" || p.backgroundSubscriptions === "On")
+				msg(t("Системный трей недоступен.", "System tray unavailable."));
+		});
+	}, [windows, ru, p.minimizeToTray, p.backgroundSubscriptions]);
+	useEffect(() => {
+		if (!windows) return;
+		const listener = listen("ploom-connect-selected", () =>
+			connectFromTray.current(),
+		);
+		return () => {
+			void listener.then((stop) => stop());
+		};
+	}, [windows]);
+
+	async function toggleTunnel() {
+		if (
+			(!android && !windows) ||
+			tunnel === "unavailable" ||
+			(!selectedServer &&
+				!["local-process", "starting", "tunnel-open"].includes(tunnel))
+		) {
+			msg(
+				t(
+					"Подключение запланировано на следующее крупное обновление.",
+					"VPN support is planned for the next major update.",
+				),
+			);
+			return;
+		}
+		request(true);
+		try {
+			if (tunnel === "local-process") await invoke("proxy_stop");
+			else if (tunnel === "tunnel-open" || tunnel === "starting")
+				await invoke("tunnel_stop");
+			else {
+				const command = android ? "tunnel_start" : "proxy_start";
+				const raw = selectedServer?.raw;
+				try {
+					await invoke(command, { raw, system: systemProxy });
+				} catch (error) {
+					const required = String(error);
+					if (!required.startsWith("lan:")) throw error;
+					const endpoint = required.slice(4);
+					if (
+						await confirmLan(
+							t(
+								"Разрешить это подключение к локальному серверу ",
+								"Allow this connection to the local server ",
+							) +
+								endpoint +
+								"?",
+						)
+					)
+						await invoke(command, {
+							raw,
+							system: systemProxy,
+							lanEndpoint: endpoint,
+						});
+				}
+			}
+			msg("");
+		} catch (reason) {
+			const code = String(reason);
+			msg(
+				code === "protocol" || code === "options"
+					? t(
+							"Протокол или параметры пока не поддерживаются.",
+							"Protocol or options are not supported yet.",
+						)
+					: t(
+							"Не удалось запустить VPN. Проверьте адрес и системное разрешение.",
+							"VPN startup failed. Check the endpoint and system permission.",
+						),
+			);
+		} finally {
+			request(false);
+		}
+	}
 	const [available, offer] = useState("");
 	const pages = [
 		t("Главная", "Home"),
 		t("Подписки", "Subscriptions"),
 		t("Серверы", "Servers"),
 		t("Настройки", "Settings"),
+		t("Статистика", "Statistics"),
 	];
 	async function check() {
 		if (busy) return;
@@ -83,6 +231,8 @@ function App() {
 		"Набор звуков",
 		"Канал",
 		"Автопроверка",
+		"Сворачивать в трей при закрытии",
+		"Обновлять подписки в фоне",
 	];
 	const values: Record<string, string> = {
 		System: "Системный",
@@ -141,7 +291,25 @@ function App() {
 			off?.();
 		};
 	}, []);
-	const icons = [House, Layers, Server, Settings];
+	useEffect(() => {
+		if (page !== 4 || !android) return;
+		let alive = true;
+		const poll = () =>
+			invoke<{ bytes: number[] }>("traffic_summary")
+				.then((r) => {
+					if (alive) setTotals(r.bytes);
+				})
+				.catch(() => {
+					if (alive) setTotals(undefined);
+				});
+		void poll();
+		const id = setInterval(poll, 5000);
+		return () => {
+			alive = false;
+			clearInterval(id);
+		};
+	}, [page, android]);
+	const icons = [House, Layers, Server, Settings, ChartLine];
 	return (
 		<main
 			data-style={p.style}
@@ -159,6 +327,7 @@ function App() {
 				} as React.CSSProperties
 			}
 		>
+			{lanPrompt}
 			<aside>
 				<header>
 					<img src={new URL("./logo.svg", import.meta.url).href} alt="" />
@@ -190,21 +359,59 @@ function App() {
 				{page === 0 ? (
 					<>
 						<section className="hero">
+							{windows && tunnel !== "unavailable" && (
+								<label>
+									{t("Режим Windows", "Windows mode")}
+									<select
+										value={systemProxy ? "system" : "local"}
+										disabled={tunnel === "local-process" || requesting}
+										onChange={(event) =>
+											setSystemProxy(event.target.value === "system")
+										}
+									>
+										<option value="local">Local Proxy</option>
+										<option value="system">System Proxy</option>
+									</select>
+								</label>
+							)}
+							{windows && systemProxy && (
+								<p>
+									{t(
+										"Некоторые приложения игнорируют системный прокси.",
+										"Some applications ignore the system proxy.",
+									)}
+								</p>
+							)}
 							<button
 								className="power"
-								aria-label={t("Подключиться", "Connect")}
-								onClick={() =>
-									msg(
-										t(
-											"Подключение запланировано на следующее крупное обновление.",
-											"VPN support is planned for the next major update.",
-										),
-									)
+								aria-label={
+									tunnel === "tunnel-open" || tunnel === "local-process"
+										? t("Отключить", "Disconnect")
+										: t("Подключиться", "Connect")
 								}
+								disabled={requesting}
+								onClick={() => void toggleTunnel()}
 							>
 								<Power size={46} />
 							</button>
-							<h2>{t("Отключено", "Disconnected")}</h2>
+							<h2>
+								{requesting
+									? t("Запрос разрешения", "Requesting permission")
+									: tunnel === "local-process"
+										? t("Локальный прокси", "Local proxy") +
+											" · 127.0.0.1:" +
+											proxyPort
+										: tunnel === "tunnel-open"
+											? t(
+													"TUN открыт · связь не проверена",
+													"TUN open · connectivity unverified",
+												)
+											: tunnel === "starting"
+												? t("Подготовка", "Preparing")
+												: tunnel === "error" || tunnel === "revoked"
+													? t("Ошибка VPN", "VPN error")
+													: t("Отключено", "Disconnected")}
+							</h2>
 							<p>
 								{selectedServer
 									? [
@@ -226,6 +433,97 @@ function App() {
 										{usage(selectedSub.traffic).remaining}
 									</p>
 								)}
+							{android && tunnel === "tunnel-open" && notificationMissing && (
+								<button
+									onClick={async () => {
+										try {
+											const { granted } = await invoke<{ granted: boolean }>(
+												"request_vpn_notification",
+											);
+											if (!granted)
+												msg(
+													t(
+														"Уведомления отключены. Доступ можно изменить в настройках Android.",
+														"Notifications are disabled. You can change access in Android settings.",
+													),
+												);
+										} catch {
+											msg(
+												t(
+													"Не удалось запросить уведомления.",
+													"Unable to request notifications.",
+												),
+											);
+										}
+									}}
+								>
+									{t("Разрешить уведомление VPN", "Allow VPN notification")}
+								</button>
+							)}
+							{["local-process", "tunnel-open"].includes(tunnel) && (
+								<div>
+									<button
+										disabled={probeBusy}
+										onClick={async () => {
+											if (
+												!(await confirmLan(
+													t(
+														"Проверить HTTPS через выбранный сервер? Google получит IP выхода.",
+														"Test HTTPS through this connection? Google will receive the exit IP.",
+													),
+												))
+											)
+												return;
+											setProbeBusy(true);
+											setProbeMs(undefined);
+											try {
+												setProbeMs(
+													await invoke<number>(
+														android ? "tunnel_probe" : "proxy_probe",
+													),
+												);
+												msg("");
+											} catch {
+												msg(
+													t(
+														"Контрольный HTTPS-запрос не прошёл.",
+														"HTTPS connection check failed.",
+													),
+												);
+											} finally {
+												setProbeBusy(false);
+											}
+										}}
+									>
+										{t("Проверить соединение", "Test connection")}
+									</button>
+									{probeMs !== undefined && (
+										<p>
+											{t("HTTPS через сервер", "HTTPS via provider")} ·{" "}
+											{probeMs} ms
+										</p>
+									)}
+								</div>
+							)}
+							{traffic && (
+								<dl>
+									<dt>
+										{t(
+											"Передано / получено за сессию",
+											"Session upload / download",
+										)}
+									</dt>
+									<dd>
+										{traffic[0]} / {traffic[1]} B
+									</dd>
+									<dt>{t("Отправка / загрузка", "Upload / download speed")}</dt>
+									<dd>
+										{traffic[2]} / {traffic[3]} B/s
+									</dd>
+									<dt>{t("Длительность сессии", "Session duration")}</dt>
+									<dd>{traffic[4]} s</dd>
+								</dl>
+							)}
 							<output>{message}</output>
 						</section>
 						<div className="links">
@@ -236,6 +534,69 @@ function App() {
 							))}
 						</div>
 					</>
+				) : page === 4 ? (
+					<section>
+						<h2>
+							{t("Локальные счётчики трафика", "Locally measured traffic")}
+						</h2>
+						{totals ? (
+							<>
+								<table>
+									<thead>
+										<tr>
+											<th>{t("Период", "Period")}</th>
+											<th>{t("Передано, байт", "Sent, bytes")}</th>
+											<th>{t("Получено, байт", "Received, bytes")}</th>
+										</tr>
+									</thead>
+									<tbody>
+										{[
+											t("Сегодня", "Today"),
+											t("7 дней", "7 days"),
+											t("30 дней", "30 days"),
+										].map((label, i) => (
+											<tr key={label}>
+												<th>{label}</th>
+												<td>{totals[i * 2]}</td>
+												<td>{totals[i * 2 + 1]}</td>
+											</tr>
+										))}
+									</tbody>
+								</table>
+								<button
+									onClick={async () => {
+										if (
+											await confirmLan(
+												t(
+													"Очистить локальную статистику?",
+													"Clear local statistics?",
+												),
+											)
+										) {
+											try {
+												await invoke("clear_traffic");
+												setTotals(
+													(await invoke<{ bytes: number[] }>("traffic_summary"))
+														.bytes,
+												);
+											} catch {
+												setTotals(undefined);
+											}
+										}
+									}}
+								>
+									{t("Очистить статистику", "Clear statistics")}
+								</button>
+							</>
+						) : (
+							<p>
+								{t(
+									"Нет данных счётчика этой платформы.",
+									"No counter data for this platform.",
+								)}
+							</p>
+						)}
+					</section>
 				) : page === 1 ? (
 					<Subscriptions
 						ru={ru}
@@ -247,11 +608,22 @@ function App() {
 				) : (
 					<>
 						<section>
-							{(Object.keys(choices) as (keyof typeof choices)[]).map(
-								(k, i) => (
+							{(Object.keys(choices) as (keyof typeof choices)[]).map((k, i) =>
+								!windows &&
+								(k === "minimizeToTray" ||
+									k === "backgroundSubscriptions") ? null : (
 									<label key={k}>
-										{ru ? labels[i] : k}
+										<span id={`label-${k}`}>
+											{ru
+												? labels[i]
+												: k === "minimizeToTray"
+													? "Minimize to tray on close"
+													: k === "backgroundSubscriptions"
+														? "Refresh subscriptions in background"
+														: k}
+										</span>
 										<select
+											aria-labelledby={`label-${k}`}
 											disabled={k === "channel" && busy}
 											value={p[k]}
 											onChange={(e) => {
@@ -454,7 +826,7 @@ function App() {
 							)}
 							<details>
 								<summary>{t("Что нового", "What’s new")}</summary>
-								{current} · Foundation · Apache-2.0
+								{current} · Ploom · Apache-2.0 / GPL-3.0-or-later
 							</details>
 						</section>
 					</>

@@ -35,7 +35,7 @@ fn public(ip: IpAddr) -> bool {
         }
     }
 }
-async fn resolve(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
+pub(crate) async fn resolve(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
     let host = host.trim_start_matches('[').trim_end_matches(']');
     if host.is_empty() || host.len() > 253 || port == 0 {
         return Err("address".into());
@@ -58,7 +58,12 @@ async fn client_for(host: String, port: u16) -> Result<Client, String> {
         .build()
         .map_err(|_| "network".into())
 }
-async fn download<F, Fut>(raw: String, client_for: F) -> Result<serde_json::Value, String>
+async fn download<F, Fut>(
+    raw: String,
+    etag: Option<String>,
+    modified: Option<String>,
+    client_for: F,
+) -> Result<serde_json::Value, String>
 where
     F: Fn(String, u16) -> Fut,
     Fut: std::future::Future<Output = Result<Client, String>>,
@@ -68,7 +73,7 @@ where
     }
     let mut url = Url::parse(&raw).map_err(|_| "url")?;
     let origin = url.origin();
-    for _ in 0..5 {
+    for hop in 0..5 {
         if url.scheme() != "https"
             || url.origin() != origin
             || !url.username().is_empty()
@@ -79,11 +84,31 @@ where
         }
         let host = url.host_str().ok_or("url")?;
         let client = client_for(host.to_owned(), url.port_or_known_default().ok_or("url")?).await?;
-        let mut resp = client
+        let mut request = client
             .get(url.clone())
-            .send()
-            .await
-            .map_err(|_| "network")?;
+            .header("User-Agent", concat!("Ploom/", env!("CARGO_PKG_VERSION")));
+        let mut conditional = false;
+        if hop == 0 {
+            for (key, value) in [
+                ("If-None-Match", etag.as_deref()),
+                ("If-Modified-Since", modified.as_deref()),
+            ] {
+                if let Some(value) = value.filter(|v| !v.is_empty() && v.len() < 2048) {
+                    let header = subscription_http::header::HeaderValue::from_str(value)
+                        .map_err(|_| "header")?;
+                    request = request.header(key, header);
+                    conditional = true;
+                }
+            }
+        }
+        let mut resp = request.send().await.map_err(|_| "network")?;
+        if resp.status().as_u16() == 304 {
+            return if conditional {
+                Ok(serde_json::json!({"unchanged":true}))
+            } else {
+                Err("http".into())
+            };
+        }
         if resp.status().is_redirection() {
             url = url
                 .join(
@@ -114,6 +139,15 @@ where
             header("profile-web-page-url"),
             header("profile-title"),
         );
+        let suggested_hours = header("profile-update-interval")
+            .parse::<u32>()
+            .ok()
+            .filter(|n| (1..=168).contains(n));
+        let (etag, modified) = if hop == 0 {
+            (header("etag"), header("last-modified"))
+        } else {
+            (String::new(), String::new())
+        };
         let mut bytes = Vec::new();
         while let Some(chunk) = resp.chunk().await.map_err(|_| "network")? {
             if chunk.len() > LIMIT - bytes.len() {
@@ -122,16 +156,25 @@ where
             bytes.extend_from_slice(&chunk)
         }
         let text = String::from_utf8(bytes).map_err(|_| "encoding")?;
-        return Ok(serde_json::json!({"text":text,"traffic":traffic,"site":site,"title":title}));
+        return Ok(
+            serde_json::json!({"text":text,"traffic":traffic,"site":site,"title":title,"etag":etag,"modified":modified,"suggestedHours":suggested_hours}),
+        );
     }
     Err("redirect".into())
 }
 #[tauri::command]
-pub async fn subscription_fetch(url: String) -> Result<serde_json::Value, String> {
+pub async fn subscription_fetch(
+    url: String,
+    etag: Option<String>,
+    modified: Option<String>,
+) -> Result<serde_json::Value, String> {
     let _permit = REQUESTS.try_acquire().map_err(|_| "busy")?;
-    timeout(Duration::from_secs(25), download(url, client_for))
-        .await
-        .map_err(|_| "timeout")?
+    timeout(
+        Duration::from_secs(25),
+        download(url, etag, modified, client_for),
+    )
+    .await
+    .map_err(|_| "timeout")?
 }
 #[tauri::command]
 pub async fn subscription_probe(host: String, port: u16, seconds: u64) -> Result<u64, String> {
@@ -241,7 +284,7 @@ mod transport_tests {
                     .add_root_certificate(subscription_http::Certificate::from_der(&der).unwrap())
             }
             let client = builder.build().unwrap();
-            let result = download(url(path), |host, _| {
+            let result = download(url(path), None, None, |host, _| {
                 assert_eq!(host, name);
                 std::future::ready(Ok(client.clone()))
             })

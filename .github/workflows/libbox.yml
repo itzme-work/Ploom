@@ -1,0 +1,237 @@
+name: Android libbox ARM64
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+concurrency:
+  group: connection-native-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: {persist-credentials: false}
+      - uses: actions/setup-go@v5
+        with: {go-version: 1.26.10, cache: false}
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with: {distribution: temurin, java-version: 17}
+      - run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'ndk;27.2.12479018' 'platforms;android-36'
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
+          bash scripts/libbox/build.sh "$RUNNER_TEMP/deliver"
+          "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android24-clang" -Wall -Wextra -Werror -O2 scripts/engine-lab/android-probe.c -o "$RUNNER_TEMP/deliver/android-probe"
+          python3 scripts/libbox/sbom.py "$RUNNER_TEMP/deliver"
+          python3 scripts/libbox/notices.py "$RUNNER_TEMP/deliver"
+          cp -r LICENSES "$RUNNER_TEMP/deliver/"
+          (cd apps/client && npm sbom --package-lock-only --omit=dev --sbom-format=cyclonedx) > "$RUNNER_TEMP/deliver/frontend.cdx.json"
+          git archive --format=tar.gz -o "$RUNNER_TEMP/deliver/ploom-source.tar.gz" HEAD
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - name: Package the compiled bridge and VPN service
+        working-directory: apps/client
+        run: |
+          npm ci
+          rustup target add aarch64-linux-android x86_64-linux-android
+          export NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
+          export PLOOM_LIBBOX_AAR="$RUNNER_TEMP/deliver/libbox.aar"
+          npm run tauri -- android init --ci
+          python3 android/prepare.py
+          for attempt in 1 2 3; do
+            if npm run tauri -- android build --debug --apk --split-per-abi --target aarch64 x86_64 2>&1 | tee "$RUNNER_TEMP/android-build.log"; then
+              break
+            fi
+            if [[ "$attempt" == 3 ]] || ! grep -q "429 from server: Too Many Requests" "$RUNNER_TEMP/android-build.log"; then exit 1; fi
+            sleep "$((attempt * 30))"
+          done
+          python ../../scripts/select-vpn-apks.py src-tauri/gen/android/app/build/outputs/apk "$RUNNER_TEMP/deliver"
+          python ../../scripts/check-arm64.py "$RUNNER_TEMP/deliver/Ploom-vpn-arm64-debug.apk"
+          analyzer="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
+          for apk in "$RUNNER_TEMP/deliver/"*.apk; do
+            minimum=$("$analyzer" manifest min-sdk "$apk")
+            target=$("$analyzer" manifest target-sdk "$apk")
+            echo "$(basename "$apk") minSdk=$minimum targetSdk=$target" >> "$GITHUB_STEP_SUMMARY"
+            test "$minimum" -eq 24
+          done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: libbox-arm64-source-and-library
+          path: ${{ runner.temp }}/deliver
+          retention-days: 7
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: emulator-apk
+          path: |
+            ${{ runner.temp }}/deliver/Ploom-vpn-emulator.apk
+            ${{ runner.temp }}/deliver/android-probe
+          retention-days: 7
+          if-no-files-found: error
+  android-vpn:
+    name: Installed Android API ${{ matrix.sdk }}
+    strategy:
+      fail-fast: false
+      matrix:
+        sdk: ['24', '26', '28', '30', '33', '35', '36', '37.0']
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: {persist-credentials: false}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with: {name: emulator-apk, path: packages}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - run: npm ci
+        working-directory: apps/client
+      - name: Prepare the pinned Linux provider for emulator tests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd "$RUNNER_TEMP"
+          gh release download v1.14.4 -R SagerNet/sing-box -p sing-box-1.14.4-linux-amd64.tar.gz
+          grep ' sing-box-1.14.4-linux-amd64.tar.gz$' "$GITHUB_WORKSPACE/scripts/engine-lab/SHA256SUMS" | sha256sum -c -
+          tar xzf sing-box-1.14.4-linux-amd64.tar.gz --strip-components=1 sing-box-1.14.4-linux-amd64/sing-box
+      - run: sudo chmod a+rw /dev/kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        env:
+          PLOOM_EXPECTED_API: ${{ matrix.sdk }}
+        with:
+          api-level: ${{ matrix.sdk }}
+          disk-size: 6G
+          ram-size: 3072M
+          cores: 4
+          emulator-boot-timeout: 900
+          target: google_apis
+          arch: x86_64
+          script: bash scripts/engine-lab/android-installed.sh
+  armv7-evaluation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: {persist-credentials: false}
+      - uses: actions/setup-go@v5
+        with: {go-version: 1.26.10, cache: false}
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with: {distribution: temurin, java-version: 17}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - name: Compile and inspect experimental 32-bit APK
+        working-directory: apps/client
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'ndk;27.2.12479018' 'platforms;android-36'
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018" NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
+          bash ../../scripts/libbox/build.sh "$RUNNER_TEMP/armv7" armv7
+          export PLOOM_LIBBOX_AAR="$RUNNER_TEMP/armv7/libbox.aar"
+          rustup target add armv7-linux-androideabi
+          npm ci
+          npm run tauri -- android init --ci
+          python3 android/prepare.py
+          npm run tauri -- android build --debug --apk --split-per-abi --target armv7
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*debug.apk' -print -quit)
+          test "$("$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest min-sdk "$apk")" = 24
+          for library in libbox libploom_lib; do
+            unzip -p "$apk" "lib/armeabi-v7a/$library.so" > "$RUNNER_TEMP/$library.so"
+            readelf -h "$RUNNER_TEMP/$library.so" | grep -E 'Class: +ELF32'
+            readelf -h "$RUNNER_TEMP/$library.so" | grep -E 'Machine: +ARM$'
+          done
+          cp "$apk" "$RUNNER_TEMP/Ploom-vpn-armv7-debug.apk"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: experimental-armv7-debug
+          path: ${{ runner.temp }}/Ploom-vpn-armv7-debug.apk
+          retention-days: 7
+          if-no-files-found: error
+  armv7-runtime:
+    needs: armv7-evaluation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: {persist-credentials: false}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with: {name: experimental-armv7-debug, path: packages}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - run: npm ci
+        working-directory: apps/client
+      - run: sudo chmod a+rw /dev/kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86
+          target: google_apis
+          disk-size: 6G
+          script: |
+            adb shell getprop ro.product.cpu.abilist | grep -w armeabi-v7a
+            adb install --abi armeabi-v7a packages/Ploom-vpn-armv7-debug.apk
+            adb shell dumpsys package work.itzme.ploom | grep 'primaryCpuAbi=armeabi-v7a'
+            PLOOM_EXPECT_ARM32=1 timeout 240s node apps/client/e2e/android-vpn.mjs
+  windows-proxy:
+    permissions: {contents: read, actions: read}
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: {persist-credentials: false}
+      - uses: actions/setup-go@v5
+        with: {go-version: 1.26.10, cache: false}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - name: Build the reviewed Windows core and NSIS
+        shell: pwsh
+        run: |
+          ./scripts/windows-core/build.ps1
+          Set-Location apps/client
+          npm ci
+          '{"bundle":{"resources":["engine/*"]}}' | Set-Content src-tauri/engine-config.json -Encoding utf8NoBOM
+          npm run tauri -- build --debug --bundles nsis --config src-tauri/engine-config.json
+          if ($LASTEXITCODE) { throw 'NSIS build failed' }
+      - name: Install over signed 0.2.0 and reopen the encrypted library
+        working-directory: apps/client
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          gh run download 45560158367 --repo itzme-work/Ploom -n verified-release -D "$env:RUNNER_TEMP/baseline"
+          if ($LASTEXITCODE) { throw 'Original signed baseline unavailable' }
+          $dir = Join-Path $env:RUNNER_TEMP 'ploom-03-upgrade'
+          $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $env:RUNNER_TEMP 'ploom-03-profile'
+          $env:PLOOM_MIGRATE_LIBRARY = '1'
+          $installer = (Get-ChildItem src-tauri/target/debug/bundle/nsis/*.exe).FullName
+          foreach ($stage in @(@('0.2.0',"$env:RUNNER_TEMP/baseline/Ploom.exe"),@('0.3.0',$installer))) {
+            $proc = Start-Process $stage[1] -ArgumentList "/S /D=$dir" -Wait -PassThru
+            if ($proc.ExitCode) { throw 'Migration installer failed' }
+            node e2e/windows-update-pair.mjs "$dir/ploom.exe" $stage[0] '0.2.0'
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          }
+      - name: Test installed Windows local proxy and process cleanup
+        working-directory: apps/client
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'ploom-core-test'
+          $installer = (Get-ChildItem src-tauri/target/debug/bundle/nsis/*.exe).FullName
+          $proc = Start-Process $installer -ArgumentList "/S /D=$dir" -Wait -PassThru
+          if ($proc.ExitCode) { throw 'NSIS install failed' }
+          # The driver is a runner-only fixture, outside the packaged application.
+          if (Test-Path "$dir/engine/wintun.dll") { throw 'Installer unexpectedly distributed Wintun' }
+          Copy-Item "$env:RUNNER_TEMP/wintun-overlay/wintun.dll" "$dir/engine/wintun.dll"
+          foreach ($mode in 'local','tun-path','system','core-crash','datagrams','reality','tray') {
+            $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $env:RUNNER_TEMP "proxy-$mode-profile"
+            node e2e/windows-local.mjs "$dir/ploom.exe" $mode
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-x64-core-debug
+          path: |
+            apps/client/src-tauri/target/debug/bundle/nsis/*.exe
+            ${{ runner.temp }}/windows-core-buildinfo.txt
+          if-no-files-found: error
+          retention-days: 7

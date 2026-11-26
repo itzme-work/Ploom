@@ -1,3 +1,4 @@
+import { newEntryId } from "./library";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { openSite } from "./site";
 import { raster } from "./image";
@@ -68,6 +69,7 @@ export function Subscriptions({
 		[pass, setPass] = useState(""),
 		[msg, status] = useState(""),
 		[busy, working] = useState(false);
+	const [fullProfile, setFullProfile] = useState(false);
 	const [preview, setPreview] = useState<Preview>(),
 		[feed, setFeed] = useState<Feed>(),
 		[selected, select] = useState<Set<number>>(new Set()),
@@ -113,6 +115,7 @@ export function Subscriptions({
 		setPreview(undefined);
 		const f = remote ? await fetchFeed(remote) : undefined,
 			p = await parse(f?.text ?? input);
+		setFullProfile(false);
 		setPreview(p);
 		setFeed(f);
 		select(new Set(p.servers.map((_, i) => i)));
@@ -131,6 +134,7 @@ export function Subscriptions({
 			setName(title?.slice(0, 256) || (remote ? new URL(remote).hostname : ""));
 	};
 	const clear = () => {
+		setFullProfile(false);
 		setPreview(undefined);
 		setFeed(undefined);
 	};
@@ -212,6 +216,28 @@ export function Subscriptions({
 					>
 						{t("Вставить", "Paste")}
 					</button>
+					{isTauri() && /Android/.test(navigator.userAgent) && (
+						<button
+							onClick={() =>
+								run(async () => {
+									const { text: code } = await invoke<{ text: string }>(
+										"scan_qr",
+									);
+									if (!code) return;
+									clear();
+									if (/^https:\/\/\S+$/.test(code.trim())) {
+										setText("");
+										setUrl(code.trim());
+									} else {
+										setUrl("");
+										setText(code);
+									}
+								})
+							}
+						>
+							{t("Сканировать камерой", "Scan with camera")}
+						</button>
+					)}
 					<label>
 						{t("Файл или изображение QR", "File or QR image")}
 						<input
@@ -240,6 +266,33 @@ export function Subscriptions({
 					</button>
 					{preview && (
 						<>
+							{[
+								"WireGuard",
+								"Clash/Mihomo",
+								"Xray JSON",
+								"sing-box JSON",
+							].includes(preview.format) && (
+								<label>
+									<input
+										type="checkbox"
+										checked={fullProfile}
+										onChange={(event) => setFullProfile(event.target.checked)}
+									/>
+									{t(
+										"Полный профиль: сохранить исходный документ с DNS, группами и правилами. Подключение использует только выбранный сервер.",
+										"Full profile: retain the source document with DNS, groups and rules. Connections use only the selected server.",
+									)}
+								</label>
+							)}
+							{feed?.suggestedHours && (
+								<p>
+									{t(
+										"Рекомендуемый интервал (ч)",
+										"Provider refresh interval (hours)",
+									)}{" "}
+									· {feed.suggestedHours}
+								</p>
+							)}
 							<p>
 								{name || feed?.title || t("Без названия", "Unnamed")} ·{" "}
 								{preview.format} · {preview.servers.length}{" "}
@@ -296,7 +349,7 @@ export function Subscriptions({
 												throw Error("duplicate");
 
 											d.subscriptions.push({
-												id: crypto.randomUUID(),
+												id: newEntryId(),
 												entries,
 												name:
 													name.trim() ||
@@ -305,6 +358,14 @@ export function Subscriptions({
 												enabled: true,
 												interval: 0,
 												updated: Date.now(),
+												profile: fullProfile
+													? {
+															format: preview.format,
+															source: feed?.text ?? text,
+														}
+													: undefined,
+												etag: feed?.etag,
+												modified: feed?.modified,
 												traffic: feed?.traffic ?? "",
 												site: feed?.site ?? "",
 											});
@@ -418,6 +479,27 @@ export function Subscriptions({
 								<summary>
 									{t("Сведения и управление", "Details and actions")}
 								</summary>
+								{s.profile && (
+									<button
+										onClick={() =>
+											run(async () => {
+												if (
+													await ask(
+														t(
+															"Экспортировать полный профиль с секретами без шифрования?",
+															"Export the full profile and secrets without encryption?",
+														),
+													)
+												)
+													await download("ploom-config.txt", s.profile!.source);
+											})
+										}
+									>
+										{t("Экспорт полного профиля", "Export full profile")} ·{" "}
+										{s.profile.format}
+									</button>
+								)}
+
 								{s.entries.some((entry) => entry.hidden) && (
 									<button
 										onClick={() =>
@@ -468,6 +550,8 @@ export function Subscriptions({
 													)
 														throw Error("duplicate");
 													await update(s.id, (x) => {
+														delete x.etag;
+														delete x.modified;
 														x.url = v;
 													});
 												});
@@ -664,15 +748,16 @@ export function Servers({ ru }: Props) {
 		},
 		[],
 	);
-	const all = useMemo(
-		() =>
-			data.subscriptions
-				.filter((s) => s.enabled)
-				.flatMap((sub) =>
-					sub.entries.filter((e) => !e.hidden).map((e) => ({ e, sub })),
-				),
-		[data],
-	);
+	const all = useMemo(() => {
+		const visible: { e: Entry; sub: Subscription }[] = [];
+		for (const sub of data.subscriptions) {
+			if (!sub.enabled) continue;
+			for (const e of sub.entries) {
+				if (!e.hidden) visible.push({ e, sub });
+			}
+		}
+		return visible;
+	}, [data]);
 	const rows = useMemo(() => {
 		const rows = all.filter(
 			({ e, sub }) =>
@@ -1034,6 +1119,21 @@ export function Servers({ ru }: Props) {
 								}}
 							/>
 						</label>
+						<label>
+							{t("Личная заметка", "Personal note")}
+							<input
+								maxLength={2048}
+								defaultValue={e.note ?? ""}
+								onBlur={(ev) => {
+									const value = ev.target.value;
+									void act(() =>
+										edit(sub.id, e.id, (x) => {
+											x.note = value;
+										}),
+									);
+								}}
+							/>
+						</label>
 						<button
 							onClick={() =>
 								act(async () => {
@@ -1073,7 +1173,7 @@ export function Servers({ ru }: Props) {
 								act(() =>
 									change((d) => {
 										d.subscriptions.push({
-											id: crypto.randomUUID(),
+											id: newEntryId(),
 											name: t("Локальная копия", "Local copy"),
 											url: "",
 											enabled: true,
@@ -1082,7 +1182,7 @@ export function Servers({ ru }: Props) {
 											site: "",
 											traffic: "",
 											entries: [
-												{ ...e, id: crypto.randomUUID(), added: Date.now() },
+												{ ...e, id: newEntryId(), added: Date.now() },
 											],
 										});
 									}),

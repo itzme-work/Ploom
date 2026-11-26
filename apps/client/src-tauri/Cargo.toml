@@ -1,6 +1,6 @@
 [package]
 name = "ploom"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 
 [lib]
@@ -11,11 +11,15 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+base64 = "0.22"
 serde_json = "1"
 tauri = { version = "2", features = [] }
 
 [target.'cfg(windows)'.dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
 semver = "1"
+sha2 = "0.10"
+winreg = "0.56"
 tauri-plugin-updater = "2"
 reqwest = { version = "0.13", features = ["stream"] }
 
@@ -32,7 +36,7 @@ features = ["net", "time", "sync"]
 
 [target.'cfg(windows)'.dependencies.windows-sys]
 version="0.61"
-features=["Win32_Security_Cryptography","Win32_Foundation","Win32_UI_Shell","Win32_UI_WindowsAndMessaging"]
+features=["Win32_Security_Cryptography","Win32_Foundation","Win32_Networking_WinInet","Win32_System_JobObjects","Win32_System_Threading","Win32_Security","Win32_UI_Shell","Win32_UI_WindowsAndMessaging"]
 [target.'cfg(windows)'.dependencies.tempfile]
 version="3"
 
@@ -48,3 +52,9 @@ tokio={version="1",features=["macros","rt-multi-thread","io-util"]}
 
 [dependencies.tauri-plugin-clipboard-manager]
 version="2"
+
+[dependencies.percent-encoding]
+version="2"
+
+[dependencies.uuid]
+version="1"
