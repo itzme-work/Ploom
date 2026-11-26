@@ -10,11 +10,11 @@ const adb=(...args)=>execFileSync('adb',args,{encoding:'utf8'}).trim()
 const shell=(...args)=>adb('shell',...args)
 const mode=name=>writeFileSync(process.env.RUNNER_TEMP+'/case',name)
 const launch=()=>shell('am','start','-W','-n',pkg+'/.MainActivity')
-async function webview(){
+async function webview(openSettings=true){
  const [device]=await android.devices()
  const view=await device.webView({pkg},{timeout:60000})
  const page=await view.page()
- await page.getByRole('button',{name:'Settings',exact:true}).click()
+ if(openSettings) await page.getByRole('button',{name:'Settings',exact:true}).click()
  return page
 }
 async function installer(action){
@@ -34,6 +34,40 @@ async function installer(action){
 }
 mode('good')
 launch()
+if(Number(shell('getprop','ro.build.version.sdk'))<28){
+ // Call the production updater command from the installed debug WebView. This
+ // tests the old PackageManager and installer independently of Playwright's
+ // accessibility selectors. API 35 additionally exercises the Settings UI.
+ const page=await webview(false)
+ const marker='legacy-updater-'+Date.now()
+ await page.evaluate(value=>localStorage.setItem('ploom-test-marker',value),marker)
+ const install=()=>page.evaluate(async()=>{
+   const ipc=window.__TAURI_INTERNALS__
+   const callback=ipc.transformCallback(()=>{})
+   try{
+     await ipc.invoke('install_update',{expected:'0.1.3',channel:'Beta',progress:'__CHANNEL__:'+callback})
+     return 'installer opened'
+   }catch(error){return String(error)}
+   finally{ipc.unregisterCallback(callback)}
+ })
+ for(const [fixture,reason] of [['foreign',/signer rejected/i],['corrupt',/damaged|signature|apk|end of central directory/i],['downgrade',/version/i]]){
+   mode(fixture)
+   const result=await install()
+   expect(result).not.toBe('installer opened')
+   expect(result).toMatch(reason)
+   expect(shell('dumpsys','package',pkg)).toContain('versionName=0.1.2')
+ }
+ mode('good')
+ expect(await install()).toBe('installer opened')
+ await installer('Update|Install')
+ await expect.poll(()=>shell('dumpsys','package',pkg),{timeout:60000}).toContain('versionName=0.1.3')
+ shell('am','force-stop',pkg)
+ launch()
+ const upgraded=await webview(false)
+ expect(await upgraded.evaluate(()=>localStorage.getItem('ploom-test-marker'))).toBe(marker)
+ console.log('Legacy APK update verified: foreign signer, corruption and downgrade rejected; confirmed in-place installation preserved local data.')
+ process.exit(0)
+}
 const page=await webview()
 await libraryFixture(page,true)
 const desired={style:'ASCII',mode:'Dark',language:'English',accent:'Mint',scale:'115%',font:'Mono',effects:'Low',transparency:'Off',motion:'Off',sound:'On',volume:'50%',soundset:'Soft',channel:'Beta',automatic:'Off'}
