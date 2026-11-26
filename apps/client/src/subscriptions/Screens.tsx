@@ -1,3 +1,4 @@
+import { newEntryId } from "./library";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { openSite } from "./site";
 import { raster } from "./image";
@@ -348,7 +349,7 @@ export function Subscriptions({
 												throw Error("duplicate");
 
 											d.subscriptions.push({
-												id: crypto.randomUUID(),
+												id: newEntryId(),
 												entries,
 												name:
 													name.trim() ||
@@ -1171,7 +1172,7 @@ export function Servers({ ru }: Props) {
 								act(() =>
 									change((d) => {
 										d.subscriptions.push({
-											id: crypto.randomUUID(),
+											id: newEntryId(),
 											name: t("Локальная копия", "Local copy"),
 											url: "",
 											enabled: true,
@@ -1180,7 +1181,7 @@ export function Servers({ ru }: Props) {
 											site: "",
 											traffic: "",
 											entries: [
-												{ ...e, id: crypto.randomUUID(), added: Date.now() },
+												{ ...e, id: newEntryId(), added: Date.now() },
 											],
 										});
 									}),

@@ -137,6 +137,13 @@ jobs:
             readelf -h "$RUNNER_TEMP/$library.so" | grep -E 'Class: +ELF32'
             readelf -h "$RUNNER_TEMP/$library.so" | grep -E 'Machine: +ARM$'
           done
+          cp "$apk" "$RUNNER_TEMP/Ploom-vpn-armv7-debug.apk"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: experimental-armv7-debug
+          path: ${{ runner.temp }}/Ploom-vpn-armv7-debug.apk
+          retention-days: 7
+          if-no-files-found: error
   windows-proxy:
     permissions: {contents: read, actions: read}
     runs-on: windows-2022

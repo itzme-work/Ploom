@@ -29,7 +29,8 @@ export async function unlock(secret?: string) {
 export function change(fn: (data: Library) => void) {
 	const op = queue.then(async () => {
 		if (!password) throw Error("locked");
-		const data = structuredClone(useLibrary.getState().data);
+		const current = useLibrary.getState().data;
+        const data: Library = typeof structuredClone === "function" ? structuredClone(current) : JSON.parse(JSON.stringify(current));
 		fn(data);
 		if (
 			!data.subscriptions.some(

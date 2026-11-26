@@ -1,4 +1,13 @@
 import type { Server } from "./parser";
+// Android WebView before Chromium 92 lacks randomUUID but supports Web Crypto.
+export function newEntryId(): string {
+    if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    bytes[6] = (bytes[6] & 15) | 64;
+    bytes[8] = (bytes[8] & 63) | 128;
+    const hex = Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
+    return [hex.slice(0,8),hex.slice(8,12),hex.slice(12,16),hex.slice(16,20),hex.slice(20)].join("-");
+}
 export type Entry = Server & {
 	id: string;
 	alias?: string;
@@ -69,7 +78,7 @@ export function reconcile(old: Entry[], incoming: Server[]): Entry[] {
 	const merged: Entry[] = incoming.map((s, i) => {
 		const prev = matched[i];
 		return {
-			...(prev ?? { id: crypto.randomUUID(), added: Date.now() }),
+			...(prev ?? { id: newEntryId(), added: Date.now() }),
 			...s,
 			diagnosis:
 				prev?.host === s.host &&

@@ -89,7 +89,7 @@ try {
   const page=await (await device.webView({pkg},{timeout:30000})).page()
   page.setDefaultTimeout(20000)
   console.log('WebView attached',await page.evaluate(()=>navigator.userAgent))
-  const button=name=>page.getByRole('button',{name,exact:true,includeHidden:true})
+  const button=name=>page.locator(`button[aria-label=${JSON.stringify(name)}], button:text-is(${JSON.stringify(name)})`)
   // Hit-test each control before sending a real CDP pointer event. Older
   // Android WebViews predate Element.checkVisibility used by locator.click.
   async function tap(control){
@@ -108,7 +108,7 @@ try {
     await expect.poll(()=>locator.evaluate(el=>el.getBoundingClientRect().height>0 && getComputedStyle(el).visibility==='visible'),{timeout:20000}).toBe(true)
   }
   await tap(button('Subscriptions'))
-  await tap(page.getByLabel('Configurations',{exact:true}))
+  await tap(page.locator('textarea[aria-label="Configurations"]'))
   await page.keyboard.insertText(reality?.uri ?? shadowsocks?.uri ?? 'http://10.0.2.2:18483#Android-fixture')
   await tap(button('Preview'))
   await tap(button('Import (1)'))
