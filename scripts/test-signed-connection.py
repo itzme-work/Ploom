@@ -19,9 +19,14 @@ def control(label, *, platform=False, click=True, widget=None, checked=False):
     deadline = time.monotonic() + 45
     size = re.findall(r"(\d+)x(\d+)", adb("shell", "wm", "size"))[-1]
     width, height = map(int, size)
+    nodes = []
     scrolls = 0
     while time.monotonic() < deadline:
-        adb("shell", "uiautomator", "dump", "/sdcard/ploom-test.xml")
+        try:
+            adb("shell", "uiautomator", "dump", "/sdcard/ploom-test.xml")
+        except subprocess.CalledProcessError:
+            time.sleep(0.5)
+            continue
         nodes = list(ET.fromstring(adb("shell", "cat", "/sdcard/ploom-test.xml")).iter("node"))
         for node in nodes:
             if platform:
@@ -137,9 +142,9 @@ def main():
     control("Disconnected", click=False)
     for _ in range(20):
         services = adb("shell", "dumpsys", "activity", "services", PACKAGE)
-        links = adb("shell", "ip", "link", "show")
+        links = adb("shell", "ls", "/sys/class/net").split()
         if not any("ServiceRecord{" in line and "PloomVpnService" in line
-                   for line in services.splitlines()) and not re.search(r"^\d+: tun\d+:", links, re.M):
+                   for line in services.splitlines()) and not any(re.fullmatch(r"tun\d+", link) for link in links):
             break
         time.sleep(0.5)
     else:
@@ -150,8 +155,8 @@ if __name__ == "__main__":
     try:
         main()
     except Exception:
-        print(adb("shell", "ip", "link", "show"))
-        print(adb("shell", "ip", "rule", "show"))
-        print(adb("shell", "dumpsys", "activity", "services", PACKAGE)[-2500:])
-        print(adb("logcat", "-d", "-t", "4000", "PloomVpn:I", "AndroidRuntime:E", "Go:E", "libc:F", "*:S")[-5500:])
+        for args in [("shell", "ls", "/sys/class/net"), ("shell", "dumpsys", "activity", "services", PACKAGE),
+                     ("logcat", "-d", "-t", "6000", "PloomVpn:I", "AndroidRuntime:E", "Go:E", "libc:F", "*:S")]:
+            result = subprocess.run(["adb", *args], capture_output=True, text=True, timeout=30)
+            print(result.stdout[-6000:], result.stderr[-300:])
         raise
