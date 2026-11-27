@@ -156,7 +156,8 @@ if __name__ == "__main__":
         main()
     except Exception:
         for args in [("shell", "ls", "/sys/class/net"), ("shell", "dumpsys", "activity", "services", PACKAGE),
+                     ("logcat", "-b", "crash", "-d", "-t", "220"),
                      ("logcat", "-d", "-t", "6000", "PloomVpn:I", "AndroidRuntime:E", "Go:E", "libc:F", "*:S")]:
             result = subprocess.run(["adb", *args], capture_output=True, text=True, timeout=30)
-            print(result.stdout[-6000:], result.stderr[-300:])
+            print(result.stdout[:16000], result.stderr[-300:])
         raise
