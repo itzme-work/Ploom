@@ -27,7 +27,7 @@ jobs:
           set -euo pipefail
           gh run download "$BASELINE" -n verified-release -D baseline
           echo '5e799611a2ca59a2f87b6edc8afc464496de5b705d19aea80a94485345c339ce  baseline/Ploom-arm64.apk' | sha256sum -c -
-          gh run download 45825342178 -n official-Linux -D candidate
+          gh run download 45883680416 -n official-Linux -D candidate
           tools="$ANDROID_HOME/build-tools/36.0.0"
           for pair in baseline:0.2.0 candidate:0.3.0; do
             dir=${pair%:*}

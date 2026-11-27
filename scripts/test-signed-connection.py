@@ -59,7 +59,12 @@ def control(label, *, platform=False, click=True, widget=None, checked=False):
 class Provider(socketserver.StreamRequestHandler):
     def handle(self):
         self.connection.settimeout(12)
-        if self.rfile.readline(512).split()[:2] != [b"CONNECT", b"192.0.2.90:18081"]:
+        target = self.rfile.readline(512).split()[:2]
+        print("Fixture request:", target, flush=True)
+        if target == [b"GET", b"/health"]:
+            self.wfile.write(b"HTTP/1.0 200 OK\r\n\r\nfixture-ready\n")
+            return
+        if target != [b"CONNECT", b"192.0.2.90:18081"]:
             return
         for _ in range(32):
             if self.rfile.readline(2048) == b"\r\n":
@@ -109,11 +114,15 @@ def main():
     control("ASCII", click=False, checked=True)
     adb("shell", "input", "keyevent", "KEYCODE_BACK")
     control("Home")
-    control("Connect")
-    control("Confirm")
-    control("VPN permission", platform=True)
     with socketserver.ThreadingTCPServer(("127.0.0.1", 18483), Provider) as provider:
         threading.Thread(target=provider.serve_forever, daemon=True).start()
+        check = adb("shell", "printf 'GET /health HTTP/1.0\\r\\n\\r\\n' | toybox nc -w 5 10.0.2.2 18483")
+        if "fixture-ready" not in check:
+            raise RuntimeError("Emulator cannot reach the controlled provider before VPN")
+        control("Connect")
+        control("Confirm")
+        control("VPN permission", platform=True)
+        control("TUN open · connectivity unverified", click=False)
         for _ in range(5):
             try:
                 answer = adb("shell", f"printf '%s\\n' '{TOKEN}' | toybox nc -w 5 192.0.2.90 18081")
@@ -138,4 +147,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        print(adb("shell", "ip", "link", "show"))
+        print(adb("shell", "ip", "rule", "show"))
+        print(adb("shell", "dumpsys", "activity", "services", PACKAGE)[-2500:])
+        print(adb("logcat", "-d", "-t", "4000", "PloomVpn:I", "AndroidRuntime:E", "Go:E", "libc:F", "*:S")[-5500:])
+        raise
